@@ -42,7 +42,7 @@ it doesn't name is a member, except the household's creator (first in `members`)
 | Rename the household; settings, food preferences, portal layout, lists, cars, meal plan, medicine courses | yes | yes | | |
 | Read lists, chores, pets, baby, home, car, contacts and appointments | yes | yes | yes | yes |
 | Add items and log feeds, sleep, diapers, meals, readings and visits | yes | yes | yes | yes |
-| Tick off anyone's item, chore, job, reminder or service; end anyone's baby sleep | yes | yes | yes | yes |
+| Tick off anyone's item, chore, job, reminder or service, and Home's things to do before a regular event; end anyone's baby sleep | yes | yes | yes | yes |
 | Change or delete what someone else added | yes | yes | own only | own only |
 | Give pet medicine (dose logs) | yes | yes | if the course allows them | |
 | Read or write Spending and Bills | yes | yes | | |
@@ -58,5 +58,9 @@ it doesn't name is a member, except the household's creator (first in `members`)
 - Reminders and agenda items are kept in step by whichever device opens an app, so helpers and kids
   may write the open ones, signed by them, linking only into the apps and never re-arming a sent
   reminder. Spending's and Bills' are always private, whoever writes them.
+- Home's regular events (`homeEvents`) are everyday records: anyone adds their own; moving or
+  skipping one occurrence (`exceptions`) changes the event, so it is for admins, members and
+  whoever added it. Ticking off the thing to do before an occurrence (`homeEventPrep`,
+  `<eventId>_<day>`) is open to everyone in their own name; Undo removes your own tick.
 - Kids never tick off a medicine reminder (flea and tick, heartworm, deworming, medication): that
   records it given. Ticking a step on someone else's item keeps the number of steps.

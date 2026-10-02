@@ -202,6 +202,11 @@ const SHARED: Shared[] = [
   },
   { col: 'homeServiceLog', doc: (by) => ({ date: '2031-05-01', title: 'Filter changed', createdAt: 1, by }), edit: { title: 'Filters' } },
   { col: 'homeWarranties', doc: (by) => ({ item: 'Fridge', createdAt: 1, by }), edit: { item: 'Freezer' } },
+  {
+    col: 'homeEvents',
+    doc: (by) => ({ title: 'Garbage pickup', kind: 'trash', rule: { freq: 'week', every: 1, start: '2031-01-02' }, createdAt: 1, by }),
+    edit: { exceptions: { '2031-12-25': { moved: { date: '2031-12-26' } } } },
+  },
   { col: 'petProfiles', doc: (by) => ({ name: 'Biscuit', species: 'dog', weightUnit: 'lb', createdAt: 1, by }), edit: { name: 'Biscuit II' } },
   {
     col: 'petReminders',
@@ -573,6 +578,49 @@ describe('ticking off', () => {
     await assertFails(updateDoc(doc(db, 'households/h1/items/c1'), { subtasks: [...steps, { id: 's3', text: 'x', done: false }] }));
     await assertFails(updateDoc(doc(db, 'households/h1/items/c1'), { subtasks: 'xx' }));
     await assertSucceeds(updateDoc(doc(as(BOB), 'households/h1/items/c1'), { subtasks: [] }));
+  });
+});
+
+describe('Home: things to do before a regular event', () => {
+  const event = { title: 'Garbage pickup', kind: 'trash', rule: { freq: 'week', every: 1, start: '2031-01-02' }, createdAt: 1, by: ALICE };
+  beforeEach(() => seed('households/h1/homeEvents/e1', event));
+
+  for (const who of EVERYONE) {
+    const me = PERSON[who];
+    const inside = IN_HOUSEHOLD.includes(who);
+    const staff = STAFF.includes(who);
+
+    it(`${who}: ${inside ? 'ticks one off in their own name and undoes it' : 'can’t tick anything off'}`, async () => {
+      const tick = doc(as(me), `households/h1/homeEventPrep/e1_2031-10-22-${who}`.replace(`-${who}`, ''));
+      await expect(inside, setDoc(tick, { done: true, at: 5, by: me }));
+      await expect(inside, getDoc(tick));
+      if (!inside) return;
+      await assertFails(setDoc(tick, { done: true, at: 5, by: who === 'admin' ? BOB : ALICE }));
+      await assertSucceeds(deleteDoc(tick));
+    });
+
+    it(`${who}: ${staff ? 'undoes' : 'can’t undo'} someone else’s tick`, async () => {
+      await seed('households/h1/homeEventPrep/e1_2031-10-29', { done: true, at: 5, by: who === 'admin' ? BOB : ALICE });
+      await expect(staff, deleteDoc(doc(as(me), 'households/h1/homeEventPrep/e1_2031-10-29')));
+    });
+  }
+
+  it('ticks only for an event that exists, with a day in the id, and nothing else in it', async () => {
+    const db = as(HELEN);
+    await assertFails(setDoc(doc(db, 'households/h1/homeEventPrep/gone_2031-10-22'), { done: true, at: 5, by: HELEN }));
+    await assertFails(setDoc(doc(db, 'households/h1/homeEventPrep/e1'), { done: true, at: 5, by: HELEN }));
+    await assertFails(setDoc(doc(db, 'households/h1/homeEventPrep/e1_next-week'), { done: true, at: 5, by: HELEN }));
+    await assertFails(setDoc(doc(db, 'households/h1/homeEventPrep/e1_2031-10-22'), { done: false, at: 5, by: HELEN }));
+    await assertFails(setDoc(doc(db, 'households/h1/homeEventPrep/e1_2031-10-22'), { done: true, at: '5', by: HELEN }));
+    await assertFails(setDoc(doc(db, 'households/h1/homeEventPrep/e1_2031-10-22'), { done: true, at: 5, by: HELEN, note: 'x' }));
+    await assertSucceeds(setDoc(doc(db, 'households/h1/homeEventPrep/e1_2031-10-22'), { done: true, at: 5, by: HELEN }));
+  });
+
+  it('lets a helper add their own event, but not move or skip one of someone else’s', async () => {
+    const db = as(HELEN);
+    await assertSucceeds(setDoc(doc(db, 'households/h1/homeEvents/mine'), { ...event, by: HELEN }));
+    await assertFails(updateDoc(doc(db, 'households/h1/homeEvents/e1'), { exceptions: { '2031-10-23': { skipped: true } } }));
+    await assertSucceeds(updateDoc(doc(as(BOB), 'households/h1/homeEvents/e1'), { exceptions: { '2031-10-23': { skipped: true } } }));
   });
 });
 
