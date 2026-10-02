@@ -1029,6 +1029,23 @@ describe('attacks', () => {
     await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/contacts/c10'), { ...vet, website: 'http://example.com' }));
   });
 
+  it('keeps list item and baby appointment links to web addresses', async () => {
+    const item = { name: 'Dentist', listId: 'todo', completed: false };
+    const put = (data: Record<string, unknown>) => setDoc(doc(as(ALICE), 'households/h1/items/l1'), { ...item, ...data });
+    await assertFails(put({ link: 'javascript:alert(1)' }));
+    await assertFails(put({ link: 'data:text/html,<script>alert(1)</script>' }));
+    await assertFails(put({ link: 'intent://evil#Intent;end' }));
+    await assertFails(put({ link: 7 }));
+    await assertSucceeds(put({ link: 'https://calendar.google.com/calendar/event?eid=abc' }));
+    await assertSucceeds(put({ link: 'http://example.com' }));
+    await assertSucceeds(put({ link: '' }));
+    const visit = { title: 'Checkup', at: 1 };
+    const appt = (data: Record<string, unknown>) => setDoc(doc(as(ALICE), 'households/h1/babyAppointments/a1'), { ...visit, ...data });
+    await assertFails(appt({ calendarLink: 'javascript:alert(1)' }));
+    await assertFails(appt({ calendarLink: 'http://calendar.example.com' }));
+    await assertSucceeds(appt({ calendarLink: 'https://calendar.google.com/calendar/event?eid=abc' }));
+  });
+
   it('keeps pet photos to image data', async () => {
     const photo = (data: string) => setDoc(doc(as(ALICE), 'households/h1/petPhotos/p1'), { data, updatedAt: 1, by: ALICE });
     await assertFails(photo('data:image/svg+xml;base64,PHN2Zz48c2NyaXB0PmFsZXJ0KDEpPC9zY3JpcHQ+PC9zdmc+'));
