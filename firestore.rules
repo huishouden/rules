@@ -76,6 +76,14 @@ service cloud.firestore {
           && request.resource.data.name.size() <= 80
           && request.resource.data.categoryOrder is list
           && request.resource.data.categoryOrder.size() <= 20;
+
+        match /aisles/{itemKey} {
+          allow read, delete: if isMember();
+          allow create, update: if isMember()
+            && request.resource.data.aisle is string
+            && request.resource.data.aisle.size() > 0
+            && request.resource.data.aisle.size() <= 24;
+        }
       }
 
       match /favorites/{favoriteId} {
