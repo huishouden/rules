@@ -127,6 +127,21 @@ service cloud.firestore {
           && request.resource.data.at is int;
       }
 
+      // The household's contacts, shared by every app (@huishouden/pwa-kit/contacts; fields match
+      // CONTACT_FIELDS there).
+      match /contacts/{contactId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['name', 'role', 'phone', 'email', 'website', 'address', 'mapsUrl', 'notes', 'apps', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 120
+          && request.resource.data.apps is list
+          && request.resource.data.apps.size() <= 20
+          && (!('notes' in request.resource.data) || (request.resource.data.notes is string && request.resource.data.notes.size() <= 1000))
+          && (!('address' in request.resource.data) || (request.resource.data.address is string && request.resource.data.address.size() <= 300));
+      }
+
       match /favorites/{favoriteId} {
         allow read, write: if isMember();
       }

@@ -178,6 +178,17 @@ describe('household contents', () => {
     await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/babyEvents/e1')));
   });
 
+  it('lets members keep shared contacts, with only the known fields', async () => {
+    const vet = { name: 'Example Vet', role: 'Vet', phone: '+1 555 0100', apps: ['pet'], createdAt: 1, by: 'alice@example.com' };
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/contacts/c1'), vet));
+    await assertSucceeds(getDoc(doc(as(BOB), 'households/h1/contacts/c1')));
+    await assertFails(getDoc(doc(as(MALLORY), 'households/h1/contacts/c1')));
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h1/contacts/c2'), vet));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/contacts/c3'), { ...vet, ssn: 'x' }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/contacts/c4'), { ...vet, name: '' }));
+    await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/contacts/c1')));
+  });
+
   it('lets members edit the baby profile, checklists and appointments', async () => {
     await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/babyProfile/main'), { dueDate: '2031-03-01', updatedAt: 1 }));
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/babyProfile/other'), { dueDate: '2031-03-01' }));
