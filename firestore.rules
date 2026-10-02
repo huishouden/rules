@@ -326,6 +326,92 @@ service cloud.firestore {
           && stamped(request.resource.data);
       }
 
+      // Huishouden Bills: bill sources (which emails are whose bills), bills (bill/v1), and each
+      // member's last email check. Field lists match the app's src/lib/model.ts.
+      function billKinds() {
+        return ['electric', 'gas', 'water', 'internet', 'phone', 'mortgage', 'hoa', 'insurance', 'other'];
+      }
+
+      function billMoney(v) {
+        return v == null
+          || (v is map && v.keys().hasOnly(['amount', 'currency'])
+            && v.amount is string && v.amount.matches('^-?[0-9]{1,12}[.][0-9]{2}$')
+            && v.currency is string && v.currency.matches('^[A-Z]{3}$'));
+      }
+
+      function billAutopay(v) {
+        return v == null
+          || (v is map && v.keys().hasOnly(['enrolled', 'nextDraft'])
+            && v.enrolled is bool
+            && (!('nextDraft' in v) || isYmd(v.nextDraft)));
+      }
+
+      match /billSources/{sourceId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['name', 'kind', 'from', 'subject', 'label', 'payUrl', 'autopay', 'createdAt', 'createdBy', 'updatedAt'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 60
+          && request.resource.data.kind in billKinds()
+          && optString(request.resource.data, 'from', 200)
+          && optString(request.resource.data, 'subject', 200)
+          && optString(request.resource.data, 'label', 200)
+          && ('from' in request.resource.data || 'subject' in request.resource.data || 'label' in request.resource.data)
+          && optLink(request.resource.data, 'payUrl')
+          && (request.resource.data.autopay == null || request.resource.data.autopay is bool)
+          && request.resource.data.createdAt is int
+          && request.resource.data.createdBy is string
+          && request.resource.data.updatedAt is int;
+      }
+
+      match /bills/{billId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['schema', 'source', 'sourceId', 'kind', 'label', 'due', 'amountDue', 'status', 'autopay', 'period', 'payUrl', 'repeat', 'emailId', 'paidAt', 'paidBy', 'paidVia', 'dismissed', 'createdAt', 'createdBy', 'updatedAt', 'observedAt'])
+          && request.resource.data.schema == 'bill/v1'
+          && request.resource.data.source in ['email', 'manual']
+          && optString(request.resource.data, 'sourceId', 100)
+          && request.resource.data.kind in billKinds()
+          && request.resource.data.label is string
+          && request.resource.data.label.size() > 0
+          && request.resource.data.label.size() <= 60
+          && (request.resource.data.due == null || isYmd(request.resource.data.due))
+          && billMoney(request.resource.data.amountDue)
+          && request.resource.data.status in ['due', 'paid', 'credit', 'unknown']
+          && billAutopay(request.resource.data.autopay)
+          && (!('period' in request.resource.data) || (request.resource.data.period is map
+            && request.resource.data.period.keys().hasOnly(['start', 'end'])
+            && isYmd(request.resource.data.period.start) && isYmd(request.resource.data.period.end)))
+          && optLink(request.resource.data, 'payUrl')
+          && (!('repeat' in request.resource.data) || request.resource.data.repeat in ['monthly', 'quarterly', 'yearly'])
+          && optString(request.resource.data, 'emailId', 200)
+          && (!('paidAt' in request.resource.data) || request.resource.data.paidAt is int)
+          && optString(request.resource.data, 'paidBy', 200)
+          && (!('paidVia' in request.resource.data) || request.resource.data.paidVia in ['member', 'email'])
+          && (!('dismissed' in request.resource.data) || request.resource.data.dismissed is bool)
+          && request.resource.data.createdAt is int
+          && request.resource.data.createdBy is string
+          && request.resource.data.updatedAt is int
+          && (!('observedAt' in request.resource.data) || request.resource.data.observedAt is int);
+      }
+
+      // One per member, keyed by their email: only they record their own check.
+      match /billSync/{email} {
+        allow read: if isMember();
+        allow create, update: if isMember()
+          && email == myEmail()
+          && request.resource.data.keys().hasOnly(['checkedAt', 'by', 'sources', 'emails', 'bills', 'errors'])
+          && request.resource.data.by == myEmail()
+          && request.resource.data.checkedAt is int
+          && request.resource.data.sources is int
+          && request.resource.data.emails is int
+          && request.resource.data.bills is int
+          && request.resource.data.errors is list
+          && request.resource.data.errors.size() <= 20;
+        allow delete: if isMember() && email == myEmail();
+      }
+
       // Each member's own name and photo (@huishouden/pwa-kit/household saveMyProfile), keyed by
       // their email; only that member writes it.
       match /profiles/{email} {

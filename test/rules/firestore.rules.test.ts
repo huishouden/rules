@@ -432,3 +432,73 @@ describe('household contents', () => {
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/items/i3'), { name: '', listId: 'groceries', completed: false }));
   });
 });
+
+describe('Huishouden Bills', () => {
+  const source = { name: 'Example Power Co', kind: 'electric', from: 'billing@power.example.com', autopay: null, createdAt: 1, createdBy: ALICE, updatedAt: 1 };
+  const bill = {
+    schema: 'bill/v1',
+    source: 'email',
+    sourceId: 'power',
+    kind: 'electric',
+    label: 'Example Power Co',
+    due: '2031-05-20',
+    amountDue: { amount: '120.00', currency: 'USD' },
+    status: 'due',
+    autopay: { enrolled: true, nextDraft: '2031-05-20' },
+    period: { start: '2031-04-01', end: '2031-04-30' },
+    emailId: 'msg-0001',
+    createdAt: 1,
+    createdBy: ALICE,
+    updatedAt: 1,
+    observedAt: 1,
+  };
+  const check = { checkedAt: 1, by: BOB, sources: 1, emails: 2, bills: 1, errors: [] };
+
+  it('lets members keep bill sources with a way to match emails, and nobody else', async () => {
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/billSources/power'), source));
+    await assertSucceeds(getDoc(doc(as(BOB), 'households/h1/billSources/power')));
+    await assertFails(getDoc(doc(as(MALLORY), 'households/h1/billSources/power')));
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h1/billSources/x'), source));
+    const { from: _from, ...noMatch } = source;
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/billSources/none'), noMatch));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/billSources/kind'), { ...source, kind: 'casino' }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/billSources/extra'), { ...source, password: 'x' }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/billSources/link'), { ...source, payUrl: 'javascript:alert(1)' }));
+    await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/billSources/power')));
+  });
+
+  it('lets members write bills in the bill/v1 shape, mark them paid and remove them', async () => {
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/bills/power_2031-05-20'), bill));
+    await assertSucceeds(getDoc(doc(as(BOB), 'households/h1/bills/power_2031-05-20')));
+    await assertFails(getDoc(doc(as(MALLORY), 'households/h1/bills/power_2031-05-20')));
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h1/bills/x'), bill));
+    await assertSucceeds(updateDoc(doc(as(BOB), 'households/h1/bills/power_2031-05-20'), { status: 'paid', paidAt: 2, paidBy: BOB, paidVia: 'member', updatedAt: 2 }));
+    await assertSucceeds(updateDoc(doc(as(BOB), 'households/h1/bills/power_2031-05-20'), { dismissed: true, updatedAt: 3 }));
+    const manual = { schema: 'bill/v1', source: 'manual', kind: 'insurance', label: 'Example Mutual', due: null, amountDue: null, status: 'due', autopay: null, repeat: 'quarterly', createdAt: 1, createdBy: ALICE, updatedAt: 1 };
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/bills/m1'), manual));
+    await assertSucceeds(deleteDoc(doc(as(ALICE), 'households/h1/bills/m1')));
+  });
+
+  it('refuses bills with unknown fields or malformed money, dates and autopay', async () => {
+    const at = (id: string, data: object) => setDoc(doc(as(ALICE), `households/h1/bills/${id}`), data);
+    await assertFails(at('b1', { ...bill, accountNumber: '0000' }));
+    await assertFails(at('b2', { ...bill, amountDue: { amount: 120, currency: 'USD' } }));
+    await assertFails(at('b3', { ...bill, amountDue: { amount: '120.5', currency: 'USD' } }));
+    await assertFails(at('b4', { ...bill, due: 'May 20' }));
+    await assertFails(at('b5', { ...bill, autopay: { enrolled: 'yes' } }));
+    await assertFails(at('b6', { ...bill, status: 'late' }));
+    await assertFails(at('b7', { ...bill, schema: 'bill/v2' }));
+    await assertFails(at('b8', { ...bill, period: { start: '2031-04-01' , end: 'soon' } }));
+    await assertSucceeds(at('b9', { ...bill, amountDue: { amount: '-15.00', currency: 'USD' }, status: 'credit' }));
+  });
+
+  it("lets each member record only their own email check, readable by members", async () => {
+    await assertSucceeds(setDoc(doc(as(BOB), `households/h1/billSync/${BOB}`), check));
+    await assertSucceeds(getDoc(doc(as(ALICE), `households/h1/billSync/${BOB}`)));
+    await assertFails(getDoc(doc(as(MALLORY), `households/h1/billSync/${BOB}`)));
+    await assertFails(setDoc(doc(as(ALICE), `households/h1/billSync/${BOB}`), check));
+    await assertFails(setDoc(doc(as(BOB), `households/h1/billSync/${BOB}`), { ...check, by: ALICE }));
+    await assertFails(setDoc(doc(as(BOB), `households/h1/billSync/${BOB}`), { ...check, errors: Array.from({ length: 21 }, (_, i) => `e${i}`) }));
+    await assertFails(setDoc(doc(as(BOB), `households/h1/billSync/${BOB}`), { ...check, token: 'x' }));
+  });
+});
