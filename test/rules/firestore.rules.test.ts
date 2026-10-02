@@ -126,6 +126,22 @@ describe('household contents', () => {
     await assertFails(setDoc(doc(db, 'households/h1/items/c2'), { name: 'List', listId: 'chores', completed: false, subtasks: steps(51) }));
   });
 
+  it('lets members plan meals by day and slot, with only the known fields', async () => {
+    const slot = { day: '2031-01-06', type: 'dinner', name: 'Baked salmon with rice', meal: { type: 'dinner', name: 'Baked salmon with rice', parts: [] }, by: ALICE, updatedAt: 1 };
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/mealPlan/2031-01-06_dinner'), slot));
+    await assertSucceeds(getDoc(doc(as(BOB), 'households/h1/mealPlan/2031-01-06_dinner')));
+    await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/mealPlan/2031-01-06_dinner'), { ...slot, name: 'Tofu bowl', by: BOB }));
+    await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/mealPlan/2031-01-06_dinner')));
+    // Outsiders, a slot id that does not match, an unknown meal type or field, or writing as someone else.
+    await assertFails(getDoc(doc(as(MALLORY), 'households/h1/mealPlan/2031-01-06_dinner')));
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h1/mealPlan/2031-01-06_dinner'), { ...slot, by: MALLORY }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/mealPlan/2031-01-07_dinner'), slot));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/mealPlan/2031-01-06_snack'), { ...slot, type: 'snack' }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/mealPlan/2031-01-06_dinner'), { ...slot, note: 'x' }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/mealPlan/2031-01-06_dinner'), { ...slot, by: BOB }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/mealPlan/2031-1-6_dinner'), { ...slot, day: '2031-1-6' }));
+  });
+
   it('lets members save, read and remove favorite meals, and nobody else', async () => {
     const favorite = { meal: { type: 'dinner', name: 'Steak', parts: [] }, savedAt: 1, savedBy: 'Bob' };
     await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/favorites/steak'), favorite));
