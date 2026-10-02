@@ -402,6 +402,13 @@ describe('household contents', () => {
       await assertFails(setDoc(doc(as(ALICE), path), { ...tasks, googleTasks: 'My Tasks' }));
       await assertFails(setDoc(doc(as(ALICE), path), { ...tasks, googleTasks: Array.from({ length: 11 }, () => link) }));
       await assertFails(setDoc(doc(as(ALICE), path), { ...tasks, updatedAt: '2031-01-06' }));
+      await assertFails(setDoc(doc(as(ALICE), path), { ...tasks, handled: 'dGFzaw' }));
+      await assertFails(setDoc(doc(as(ALICE), path), { ...tasks, handled: Array.from({ length: 501 }, (_, i) => `t${i}`) }));
+    });
+
+    it('keeps the Google tasks already taken in', async () => {
+      await assertSucceeds(setDoc(doc(as(ALICE), path), { ...tasks, handled: ['dGFzay1lZ2dz', 'dGFzay1taWxr'] }));
+      await assertSucceeds(setDoc(doc(as(BOB), path), { ...tasks, handled: Array.from({ length: 500 }, (_, i) => `t${i}`), by: BOB }));
     });
   });
 

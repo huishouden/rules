@@ -847,13 +847,17 @@ service cloud.firestore {
             && request.resource.data.updatedAt is int
             && request.resource.data.by == myEmail())
           // Tasks: which Google Tasks lists feed which household list ({ googleListId, title,
-          // listId, mode: 'add' | 'suggest' } each). Only the shape is checked (rules have no loops);
-          // Tasks writes each entry clipped and reads them defensively.
+          // listId, mode: 'add' | 'suggest' } each), and the Google task ids already taken in
+          // (`handled`, the latest 500), so a task cleared from a list is not brought back. Only the
+          // shape is checked (rules have no loops); Tasks writes entries clipped and reads them
+          // defensively.
           || (docId == 'tasks'
             && request.resource.data.keys().hasAll(['googleTasks', 'updatedAt', 'by'])
-            && request.resource.data.keys().hasOnly(['googleTasks', 'updatedAt', 'by'])
+            && request.resource.data.keys().hasOnly(['googleTasks', 'handled', 'updatedAt', 'by'])
             && request.resource.data.googleTasks is list
             && request.resource.data.googleTasks.size() <= 10
+            && (!('handled' in request.resource.data) || (request.resource.data.handled is list
+              && request.resource.data.handled.size() <= 500))
             && request.resource.data.updatedAt is int
             && request.resource.data.by == myEmail())
         );
