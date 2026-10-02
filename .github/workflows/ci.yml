@@ -56,12 +56,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      # Install from the lockfile before any credential exists in the job.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - run: bun install --frozen-lockfile
       - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-      - run: bun install --frozen-lockfile
       - run: bunx firebase deploy --only firestore:rules,firestore:indexes --project huishouden-piekstra --non-interactive --message "${{ github.sha }}"
 
   # The same rules on the staging project (pwa-kit STANDARD.md "Staging"), where app PRs run their
@@ -88,10 +89,11 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      # Install from the lockfile before any credential exists in the job.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - run: bun install --frozen-lockfile
       - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
           workload_identity_provider: ${{ vars.STAGING_GCP_WIF_PROVIDER }}
           service_account: ${{ vars.STAGING_GCP_DEPLOY_SA }}
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-      - run: bun install --frozen-lockfile
       - run: bunx firebase deploy --only firestore:rules,firestore:indexes --project huishouden-staging --non-interactive --message "staging ${{ github.event.pull_request.head.sha || github.sha }}"
