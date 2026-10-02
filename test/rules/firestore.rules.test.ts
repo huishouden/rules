@@ -178,6 +178,16 @@ describe('household contents', () => {
     await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/babyEvents/e1')));
   });
 
+  it('lets each member record only their own profile, readable by members', async () => {
+    const me = { name: 'Alice Example', photoURL: 'https://example.com/a.png', updatedAt: 1 };
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/profiles/alice@example.com'), me));
+    await assertSucceeds(getDoc(doc(as(BOB), 'households/h1/profiles/alice@example.com')));
+    await assertFails(getDoc(doc(as(MALLORY), 'households/h1/profiles/alice@example.com')));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/profiles/alice@example.com'), me));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/profiles/alice@example.com'), { ...me, photoURL: 'javascript:x' }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/profiles/alice@example.com'), { ...me, role: 'admin' }));
+  });
+
   it('lets members keep shared contacts, with only the known fields', async () => {
     const vet = { name: 'Example Vet', role: 'Vet', phone: '+1 555 0100', apps: ['pet'], createdAt: 1, by: 'alice@example.com' };
     await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/contacts/c1'), vet));

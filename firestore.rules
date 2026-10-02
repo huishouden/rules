@@ -127,6 +127,20 @@ service cloud.firestore {
           && request.resource.data.at is int;
       }
 
+      // Each member's own name and photo (@huishouden/pwa-kit/household saveMyProfile), keyed by
+      // their email; only that member writes it.
+      match /profiles/{email} {
+        allow read: if isMember();
+        allow write: if isMember()
+          && email == myEmail()
+          && request.resource.data.keys().hasOnly(['name', 'photoURL', 'updatedAt'])
+          && request.resource.data.updatedAt is int
+          && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 100))
+          && (!('photoURL' in request.resource.data) || (request.resource.data.photoURL is string
+            && request.resource.data.photoURL.matches('https://.*') && request.resource.data.photoURL.size() <= 500));
+        allow delete: if isMember() && email == myEmail();
+      }
+
       // The household's contacts, shared by every app (@huishouden/pwa-kit/contacts; fields match
       // CONTACT_FIELDS there).
       match /contacts/{contactId} {
