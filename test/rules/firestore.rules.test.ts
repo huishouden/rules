@@ -492,6 +492,15 @@ describe('household contents', () => {
       await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p5'), { ...pet, targetNote: 42 }));
     });
 
+    it('lets a birth date be marked approximate, as a flag beside the date', async () => {
+      const db = as(ALICE);
+      await assertSucceeds(setDoc(doc(db, 'households/h1/petProfiles/p6'), { ...pet, birthDateApprox: true }));
+      await assertSucceeds(setDoc(doc(db, 'households/h1/petProfiles/p6'), { ...pet, birthDateApprox: false }));
+      await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p7'), { ...pet, birthDateApprox: 'yes' }));
+      const { birthDate: _birthDate, ...undated } = pet;
+      await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p7'), { ...undated, birthDateApprox: true }));
+    });
+
     it('checks reminders: a schedule needs both every and unit, within bounds', async () => {
       const db = as(ALICE);
       const { every: _every, unit: _unit, ...once } = reminder;
