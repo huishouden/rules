@@ -167,7 +167,13 @@ const SHARED: Shared[] = [
     edit: { name: 'Oat milk' },
     tick: { completed: true, completedAt: 5, updatedAt: 5 },
   },
-  { col: 'babyEvents', doc: (by) => ({ kind: 'feed', at: 1700000000000, side: 'left', by, createdAt: 1 }), edit: { side: 'right' } },
+  {
+    col: 'babyEvents',
+    doc: (by) => ({ kind: 'sleep', at: 1700000000000, side: 'left', by, createdAt: 1 }),
+    edit: { side: 'right' },
+    // Ending a sleep someone else started.
+    tick: { endAt: 1700003600000, updatedAt: 5 },
+  },
   {
     col: 'babyChecklists',
     doc: (by) => ({ list: 'Bag', text: 'Charger', done: false, order: 1, createdAt: 1, by }),

@@ -301,10 +301,11 @@ service cloud.firestore {
           && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 60));
       }
 
+      // Anyone may end a sleep someone else started (the babysitter records the wake-up).
       match /babyEvents/{eventId} {
         allow read: if isMember();
         allow delete: if canRemove();
-        allow create, update: if writer([])
+        allow create, update: if writer(['endAt', 'updatedAt'])
           && request.resource.data.keys().hasOnly(['kind', 'at', 'endAt', 'side', 'method', 'amountMl', 'diaper', 'note', 'by', 'createdAt', 'updatedAt'])
           && request.resource.data.kind in ['feed', 'sleep', 'diaper', 'pump']
           && request.resource.data.at is int
