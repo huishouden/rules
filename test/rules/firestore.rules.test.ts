@@ -157,16 +157,6 @@ describe('household contents', () => {
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/stores/s1/aisles/eggs'), { ...aisle, aisle: 'x'.repeat(25) }));
   });
 
-  it('lets members read spending transactions that no browser can write', async () => {
-    await env.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'households/h1/spendingTransactions/t1'), { amount: 12.5, merchant: 'Corner Grocer' });
-    });
-    await assertSucceeds(getDoc(doc(as(ALICE), 'households/h1/spendingTransactions/t1')));
-    await assertFails(getDoc(doc(as(MALLORY), 'households/h1/spendingTransactions/t1')));
-    await assertFails(setDoc(doc(as(ALICE), 'households/h1/spendingTransactions/t2'), { amount: 1 }));
-    await assertFails(deleteDoc(doc(as(ALICE), 'households/h1/spendingTransactions/t1')));
-  });
-
   it('lets members keep the baby log, and nobody else', async () => {
     const feed = { kind: 'feed', at: 1700000000000, side: 'left', by: 'alice@example.com', createdAt: 1700000000000 };
     await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/babyEvents/e1'), feed));
@@ -638,5 +628,90 @@ describe('Huishouden Bills', () => {
     await assertFails(setDoc(doc(as(BOB), `households/h1/billSync/${BOB}`), { ...check, by: ALICE }));
     await assertFails(setDoc(doc(as(BOB), `households/h1/billSync/${BOB}`), { ...check, errors: Array.from({ length: 21 }, (_, i) => `e${i}`) }));
     await assertFails(setDoc(doc(as(BOB), `households/h1/billSync/${BOB}`), { ...check, token: 'x' }));
+  });
+});
+
+describe('Huishouden Spending', () => {
+  const tx = (extra: Record<string, unknown> = {}) => ({
+    date: '2031-03-14',
+    description: 'EXAMPLE GROCERY',
+    amount: 61.15,
+    category: 'Groceries',
+    card: 'Card One',
+    type: 'Sale',
+    source: 'statement',
+    last4: '1111',
+    createdAt: 1,
+    by: ALICE,
+    ...extra,
+  });
+
+  it('lets members write, change and remove transactions, and nobody else', async () => {
+    const db = as(ALICE);
+    await assertSucceeds(setDoc(doc(db, 'households/h1/spendingTransactions/st-1'), tx()));
+    await assertSucceeds(setDoc(doc(db, 'households/h1/spendingTransactions/al-m1'), tx({ source: 'alert', emailId: 'm1', amount: -18, type: 'Return' })));
+    await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/spendingTransactions/st-1'), tx({ category: 'Home & Garden', updatedAt: 2, by: BOB })));
+    await assertSucceeds(getDocs(collection(as(BOB), 'households/h1/spendingTransactions')));
+    await assertFails(getDocs(collection(as(MALLORY), 'households/h1/spendingTransactions')));
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h1/spendingTransactions/st-2'), tx()));
+    await assertFails(deleteDoc(doc(as(MALLORY), 'households/h1/spendingTransactions/st-1')));
+    await assertSucceeds(deleteDoc(doc(db, 'households/h1/spendingTransactions/st-1')));
+  });
+
+  it('refuses transactions with unknown fields or malformed dates, amounts, sources and digits', async () => {
+    const ref = doc(as(ALICE), 'households/h1/spendingTransactions/bad');
+    await assertFails(setDoc(ref, tx({ merchant: 'x' })));
+    await assertFails(setDoc(ref, tx({ date: '03/14/2031' })));
+    await assertFails(setDoc(ref, tx({ amount: '61.15' })));
+    await assertFails(setDoc(ref, tx({ source: 'sheet' })));
+    await assertFails(setDoc(ref, tx({ last4: '12345' })));
+    await assertFails(setDoc(ref, tx({ description: '' })));
+    const { createdAt: _c, ...noCreated } = tx();
+    await assertFails(setDoc(ref, noCreated));
+  });
+
+  it("leaves the legacy Apps Script's mirrored documents readable and re-writable by members", async () => {
+    // The script writes with its owner's IAM credentials (rules bypassed), with a timestamp updatedAt.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'households/h1/spendingTransactions/abc123'), {
+        date: '2031-03-10', description: 'EXAMPLE BOOKSHOP', amount: 27.1, category: 'Shopping', card: 'Card Two', type: 'Sale', source: 'alert', updatedAt: new Date(),
+      });
+    });
+    await assertSucceeds(getDoc(doc(as(ALICE), 'households/h1/spendingTransactions/abc123')));
+    // A statement row replacing the alert rewrites the whole document in the members' shape.
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/spendingTransactions/abc123'), tx({ description: 'EXAMPLE BOOKSHOP #12', updatedAt: 3 })));
+  });
+
+  it('keeps one settings document with the known fields', async () => {
+    const db = as(ALICE);
+    const settings = { monthlyBudget: 2000, currencySymbol: '$', ignoredKeywords: ['rent payment'], alertLabels: ['Bank/Alerts'], updatedAt: 1, updatedBy: ALICE };
+    await assertSucceeds(setDoc(doc(db, 'households/h1/spendingSettings/main'), settings));
+    await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/spendingSettings/main'), { emailCheckedAt: 5, emailCheckedBy: BOB, updatedAt: 5, updatedBy: BOB }, { merge: true }));
+    await assertSucceeds(getDoc(doc(as(BOB), 'households/h1/spendingSettings/main')));
+    await assertFails(getDoc(doc(as(MALLORY), 'households/h1/spendingSettings/main')));
+    await assertFails(setDoc(doc(db, 'households/h1/spendingSettings/other'), settings));
+    await assertFails(setDoc(doc(db, 'households/h1/spendingSettings/main'), { ...settings, monthlyBudget: -1 }));
+    await assertFails(setDoc(doc(db, 'households/h1/spendingSettings/main'), { ...settings, theme: 'dark' }));
+    await assertFails(deleteDoc(doc(db, 'households/h1/spendingSettings/main')));
+  });
+
+  it('lets members keep cards (with remembered statement columns) and category rules', async () => {
+    const db = as(ALICE);
+    const card = { name: 'Card One', last4: '1111', issuer: 'Example Bank', alertWords: ['alerts@bank.example.com'], createdAt: 1, by: ALICE };
+    const csv = { date: 'Transaction Date', description: 'Description', amount: 'Amount', purchases: 'negative', dayFirst: false };
+    await assertSucceeds(setDoc(doc(db, 'households/h1/spendingCards/c1'), card));
+    await assertSucceeds(setDoc(doc(db, 'households/h1/spendingCards/c1'), { ...card, csv, updatedAt: 2 }));
+    await assertFails(setDoc(doc(db, 'households/h1/spendingCards/c2'), { ...card, last4: '11' }));
+    await assertFails(setDoc(doc(db, 'households/h1/spendingCards/c2'), { ...card, number: '4111111111111111' }));
+    await assertFails(setDoc(doc(db, 'households/h1/spendingCards/c2'), { ...card, csv: { ...csv, purchases: 'sometimes' } }));
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h1/spendingCards/c3'), card));
+    await assertSucceeds(deleteDoc(doc(db, 'households/h1/spendingCards/c1')));
+
+    const rule = { contains: 'example cafe', category: 'Groceries', createdAt: 1, by: ALICE };
+    await assertSucceeds(setDoc(doc(db, 'households/h1/spendingRules/r-example-cafe'), rule));
+    await assertFails(setDoc(doc(db, 'households/h1/spendingRules/r-x'), { ...rule, contains: '' }));
+    await assertFails(setDoc(doc(db, 'households/h1/spendingRules/r-x'), { ...rule, regex: '.*' }));
+    await assertFails(getDocs(collection(as(MALLORY), 'households/h1/spendingRules')));
+    await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/spendingRules/r-example-cafe')));
   });
 });

@@ -86,10 +86,85 @@ service cloud.firestore {
         }
       }
 
-      // Spending mirrors its data here from a server (which bypasses these rules); browsers only read it.
+      // Huishouden Spending: the household's card spending, written by members' browsers (statement
+      // files, card alert emails, category edits). A household's legacy Apps Script also writes
+      // spendingTransactions with its owner's IAM credentials, which bypass these rules. Field lists
+      // match TRANSACTION_FIELDS, SETTINGS_FIELDS, CARD_FIELDS, CSV_FIELDS and RULE_FIELDS in the
+      // app's src/data/model.ts.
+      function spStr(d, k, lo, hi) {
+        return d[k] is string && d[k].size() >= lo && d[k].size() <= hi;
+      }
+      function spOptStr(d, k, hi) {
+        return !(k in d) || spStr(d, k, 0, hi);
+      }
+      function spWords(d, k, maxItems) {
+        return d[k] is list && d[k].size() <= maxItems;
+      }
+
       match /spendingTransactions/{txId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['date', 'description', 'amount', 'category', 'card', 'type', 'source', 'last4', 'emailId', 'createdAt', 'updatedAt', 'by'])
+          && isYmd(request.resource.data.date)
+          && spStr(request.resource.data, 'description', 1, 200)
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= -10000000 && request.resource.data.amount <= 10000000
+          && spStr(request.resource.data, 'category', 0, 60)
+          && spStr(request.resource.data, 'card', 0, 60)
+          && spStr(request.resource.data, 'type', 0, 20)
+          && request.resource.data.source in ['statement', 'alert']
+          && (!('last4' in request.resource.data) || (request.resource.data.last4 is string && request.resource.data.last4.matches('^[0-9]{4}$')))
+          && spOptStr(request.resource.data, 'emailId', 64)
+          && request.resource.data.createdAt is int
+          && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is int)
+          && spStr(request.resource.data, 'by', 1, 200);
+      }
+
+      // One document, `main`: budget, currency, words never counted, Gmail labels, last email check.
+      match /spendingSettings/{docId} {
         allow read: if isMember();
-        allow write: if false;
+        allow delete: if false;
+        allow create, update: if isMember()
+          && docId == 'main'
+          && request.resource.data.keys().hasOnly(['monthlyBudget', 'currencySymbol', 'ignoredKeywords', 'alertLabels', 'emailCheckedAt', 'emailCheckedBy', 'updatedAt', 'updatedBy'])
+          && (!('monthlyBudget' in request.resource.data) || (request.resource.data.monthlyBudget is number
+            && request.resource.data.monthlyBudget >= 0 && request.resource.data.monthlyBudget <= 100000000))
+          && spOptStr(request.resource.data, 'currencySymbol', 4)
+          && (!('ignoredKeywords' in request.resource.data) || spWords(request.resource.data, 'ignoredKeywords', 100))
+          && (!('alertLabels' in request.resource.data) || spWords(request.resource.data, 'alertLabels', 20))
+          && (!('emailCheckedAt' in request.resource.data) || request.resource.data.emailCheckedAt is int)
+          && spOptStr(request.resource.data, 'emailCheckedBy', 200)
+          && request.resource.data.updatedAt is int
+          && spStr(request.resource.data, 'updatedBy', 1, 200);
+      }
+
+      match /spendingCards/{cardId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['name', 'last4', 'issuer', 'alertWords', 'csv', 'createdAt', 'updatedAt', 'by'])
+          && spStr(request.resource.data, 'name', 1, 60)
+          && (!('last4' in request.resource.data) || (request.resource.data.last4 is string && request.resource.data.last4.matches('^[0-9]{4}$')))
+          && spOptStr(request.resource.data, 'issuer', 40)
+          && spWords(request.resource.data, 'alertWords', 20)
+          && (!('csv' in request.resource.data) || (request.resource.data.csv is map
+            && request.resource.data.csv.keys().hasOnly(['date', 'description', 'amount', 'debit', 'credit', 'category', 'type', 'card', 'purchases', 'dayFirst'])
+            && request.resource.data.csv.purchases in ['negative', 'positive']
+            && request.resource.data.csv.dayFirst is bool))
+          && request.resource.data.createdAt is int
+          && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is int)
+          && spStr(request.resource.data, 'by', 1, 200);
+      }
+
+      // "When the merchant contains X, the category is Y."
+      match /spendingRules/{ruleId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['contains', 'category', 'createdAt', 'updatedAt', 'by'])
+          && spStr(request.resource.data, 'contains', 1, 80)
+          && spStr(request.resource.data, 'category', 1, 60)
+          && request.resource.data.createdAt is int
+          && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is int)
+          && spStr(request.resource.data, 'by', 1, 200);
       }
 
       // Huishouden Baby: the household's shared baby log, checklists and appointments.
