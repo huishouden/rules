@@ -1,0 +1,93 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email_verified == true;
+    }
+
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    match /households/{householdId} {
+      function isMember() {
+        return signedIn()
+          && myEmail() in get(/databases/$(database)/documents/households/$(householdId)).data.members;
+      }
+
+      allow read: if signedIn() && myEmail() in resource.data.members;
+
+      // A new household starts with only its creator; others are invited from inside.
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['name', 'members', 'createdAt'])
+        && request.resource.data.members == [myEmail()]
+        && request.resource.data.name is string
+        && request.resource.data.createdAt is int;
+
+      // Members may invite or remove others but cannot edit themselves out by accident.
+      // Separately, each member records their own first sign-in in `joined`, and only their own.
+      allow update: if signedIn()
+        && myEmail() in resource.data.members
+        && (
+          (myEmail() in request.resource.data.members
+            && request.resource.data.members.size() <= 12
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'members']))
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['joined'])
+            && request.resource.data.joined == resource.data.get('joined', []).concat([myEmail()]))
+        );
+
+      allow delete: if false;
+
+      // Lists are written in the same batch that creates the household, so membership is
+      // checked against the state after the write.
+      function isMemberAfter() {
+        return signedIn()
+          && myEmail() in getAfter(/databases/$(database)/documents/households/$(householdId)).data.members;
+      }
+
+      match /lists/{listId} {
+        allow read: if isMember();
+        allow write: if isMemberAfter();
+      }
+
+      match /items/{itemId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 200
+          && request.resource.data.listId is string
+          && request.resource.data.completed is bool
+          && (!('subtasks' in request.resource.data) || request.resource.data.subtasks.size() <= 50);
+      }
+
+      match /staples/{stapleId} {
+        allow read, write: if isMember();
+      }
+
+      match /stores/{storeId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 80
+          && request.resource.data.categoryOrder is list
+          && request.resource.data.categoryOrder.size() <= 20;
+      }
+
+      match /favorites/{favoriteId} {
+        allow read, write: if isMember();
+      }
+
+      match /menus/{menuId} {
+        allow read, delete: if isMember();
+        allow create: if isMember()
+          && request.resource.data.meals is list
+          && request.resource.data.meals.size() <= 30;
+      }
+    }
+  }
+}
