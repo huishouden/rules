@@ -579,6 +579,25 @@ describe('household contents', () => {
       });
     }
 
+    it("keeps each pet's photo as a small WebP or JPEG data URL, members only", async () => {
+      const photo = { data: 'data:image/webp;base64,UklGRg==', updatedAt: 1700000000000, by };
+      const path = 'households/h1/petPhotos/p1';
+      await assertSucceeds(setDoc(doc(as(ALICE), path), photo));
+      await assertSucceeds(getDoc(doc(as(BOB), path)));
+      await assertSucceeds(setDoc(doc(as(BOB), path), { ...photo, data: 'data:image/jpeg;base64,/9j/4AAQ', by: BOB }));
+      await assertFails(getDoc(doc(as(MALLORY), path)));
+      await assertFails(setDoc(doc(as(MALLORY), 'households/h1/petPhotos/p2'), photo));
+      await assertFails(setDoc(doc(as(ALICE), 'households/h1/petPhotos/p2'), { ...photo, data: 'data:image/png;base64,iVBORw0KGgo=' }));
+      await assertFails(setDoc(doc(as(ALICE), 'households/h1/petPhotos/p2'), { ...photo, data: 'https://example.com/biscuit.webp' }));
+      await assertFails(setDoc(doc(as(ALICE), 'households/h1/petPhotos/p2'), { ...photo, data: 'data:image/webp;base64,' + 'A'.repeat(100_000) }));
+      await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/petPhotos/p3'), { ...photo, data: 'data:image/webp;base64,' + 'A'.repeat(100_000 - 23) }));
+      await assertFails(setDoc(doc(as(ALICE), 'households/h1/petPhotos/p2'), { ...photo, data: 42 }));
+      await assertFails(setDoc(doc(as(ALICE), 'households/h1/petPhotos/p2'), { ...photo, updatedAt: 'now' }));
+      await assertFails(setDoc(doc(as(ALICE), 'households/h1/petPhotos/p2'), { ...photo, caption: 'Biscuit' }));
+      await assertFails(deleteDoc(doc(as(MALLORY), path)));
+      await assertSucceeds(deleteDoc(doc(as(BOB), path)));
+    });
+
     it('checks pet profiles: name, species, unit and date shape', async () => {
       const db = as(ALICE);
       await assertSucceeds(setDoc(doc(db, 'households/h1/petProfiles/p2'), { name: 'Miso', species: 'cat', weightUnit: 'kg', createdAt: 1, by }));
