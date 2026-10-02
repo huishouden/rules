@@ -64,14 +64,16 @@ jobs:
 
   # The same rules on the staging project (pwa-kit STANDARD.md "Staging"), where app PRs run their
   # signed-in tests: on every same-repo PR, so a rules change can be tried with the apps before it
-  # merges, and on main, so staging returns to main's rules. Never a fork's PR. Skipped until the
+  # merges, and on main, so staging returns to main's rules; a manual run deploys its branch there
+  # (production still deploys from pushes to main only). Never a fork's PR. Skipped until the
   # bootstrap's --staging pass sets STAGING_GCP_WIF_PROVIDER.
   deploy-staging:
     needs: [leak-scan, test]
     if: >-
       vars.STAGING_GCP_WIF_PROVIDER != '' && (
         (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
-        || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+        || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     environment: staging
     concurrency:
