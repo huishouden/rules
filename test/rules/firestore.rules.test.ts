@@ -381,6 +381,37 @@ describe('household contents', () => {
     });
   });
 
+  describe('Tasks settings', () => {
+    const path = 'households/h1/settings/tasks';
+    const link = { googleListId: 'MTIzNDU2', title: 'My Tasks', listId: 'chores', mode: 'suggest' };
+    const tasks = { googleTasks: [link, { ...link, googleListId: 'Z3JvY2', title: 'Groceries', listId: 'groceries', mode: 'add' }], updatedAt: 1, by: ALICE };
+
+    it('lets members read and save which Google Tasks lists feed which list, and nobody else', async () => {
+      await assertSucceeds(setDoc(doc(as(ALICE), path), tasks));
+      await assertSucceeds(getDoc(doc(as(BOB), path)));
+      await assertSucceeds(setDoc(doc(as(BOB), path), { ...tasks, googleTasks: [], by: BOB }));
+      await assertFails(getDoc(doc(as(MALLORY), path)));
+      await assertFails(setDoc(doc(as(MALLORY), path), { ...tasks, by: MALLORY }));
+      await assertFails(deleteDoc(doc(as(ALICE), path)));
+    });
+
+    it('checks the shape', async () => {
+      await assertFails(setDoc(doc(as(ALICE), path), { ...tasks, by: BOB }));
+      await assertFails(setDoc(doc(as(ALICE), path), { ...tasks, extra: true }));
+      await assertFails(setDoc(doc(as(ALICE), path), { googleTasks: tasks.googleTasks, by: ALICE }));
+      await assertFails(setDoc(doc(as(ALICE), path), { ...tasks, googleTasks: 'My Tasks' }));
+      await assertFails(setDoc(doc(as(ALICE), path), { ...tasks, googleTasks: Array.from({ length: 11 }, () => link) }));
+      await assertFails(setDoc(doc(as(ALICE), path), { ...tasks, updatedAt: '2031-01-06' }));
+      await assertFails(setDoc(doc(as(ALICE), path), { ...tasks, handled: 'dGFzaw' }));
+      await assertFails(setDoc(doc(as(ALICE), path), { ...tasks, handled: Array.from({ length: 501 }, (_, i) => `t${i}`) }));
+    });
+
+    it('keeps the Google tasks already taken in', async () => {
+      await assertSucceeds(setDoc(doc(as(ALICE), path), { ...tasks, handled: ['dGFzay1lZ2dz', 'dGFzay1taWxr'] }));
+      await assertSucceeds(setDoc(doc(as(BOB), path), { ...tasks, handled: Array.from({ length: 500 }, (_, i) => `t${i}`), by: BOB }));
+    });
+  });
+
   describe('food preferences', () => {
     const path = 'households/h1/settings/food';
     const sam = { id: ALICE, name: 'Alice', member: ALICE, diets: ['gerd', 'pregnant'], avoid: ['cilantro'], note: 'Dinner before 7' };
