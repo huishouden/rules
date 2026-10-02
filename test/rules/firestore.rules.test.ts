@@ -415,6 +415,73 @@ describe('household contents', () => {
     });
   });
 
+  describe('agenda', () => {
+    const item = {
+      app: 'home',
+      ref: 'job:j1',
+      kind: 'due',
+      title: 'Change HVAC filter',
+      start: 1790000000000,
+      allDay: true,
+      detail: 'Furnace room',
+      url: 'https://example-home.web.app/upkeep/j1',
+      status: 'upcoming',
+      updatedAt: 1790000000000,
+      by: ALICE,
+    };
+    const path = 'households/h1/agenda/home_job_j1_1790000000000';
+
+    it('lets members create, read, query, update and delete agenda items', async () => {
+      await assertSucceeds(setDoc(doc(as(ALICE), path), item));
+      await assertSucceeds(getDoc(doc(as(BOB), path)));
+      await assertSucceeds(getDocs(query(collection(as(BOB), 'households/h1/agenda'), where('start', '<', 1800000000000))));
+      await assertSucceeds(getDocs(query(collection(as(BOB), 'households/h1/agenda'), where('app', '==', 'home'), where('ref', '==', 'job:j1'))));
+      await assertSucceeds(setDoc(doc(as(BOB), path), { ...item, status: 'overdue', by: BOB }));
+      await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/agenda/a2'), {
+        ...item, kind: 'appointment', allDay: false, end: 1790003600000, who: 'Biscuit', by: BOB,
+      }));
+      await assertSucceeds(deleteDoc(doc(as(ALICE), path)));
+    });
+
+    it('keeps non-members out', async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), path), item);
+      });
+      const db = as(MALLORY);
+      await assertFails(getDoc(doc(db, path)));
+      await assertFails(getDocs(collection(db, 'households/h1/agenda')));
+      await assertFails(setDoc(doc(db, 'households/h1/agenda/a3'), { ...item, by: MALLORY }));
+      await assertFails(deleteDoc(doc(db, path)));
+    });
+
+    it('accepts only the known fields, types and sizes', async () => {
+      const fails = (data: Record<string, unknown>) => assertFails(setDoc(doc(as(ALICE), 'households/h1/agenda/a4'), data));
+      const without = (k: keyof typeof item) => Object.fromEntries(Object.entries(item).filter(([key]) => key !== k));
+      await fails({ ...item, extra: true });
+      for (const k of ['app', 'ref', 'kind', 'title', 'start', 'allDay', 'url', 'updatedAt', 'by'] as const) await fails(without(k));
+      await fails({ ...item, kind: 'party' });
+      await fails({ ...item, status: 'late' });
+      await fails({ ...item, title: '' });
+      await fails({ ...item, title: 'x'.repeat(121) });
+      await fails({ ...item, detail: 'x'.repeat(201) });
+      await fails({ ...item, who: 'x'.repeat(61) });
+      await fails({ ...item, ref: 'x'.repeat(201) });
+      await fails({ ...item, start: 1790000000000.5 });
+      await fails({ ...item, start: '2026-10-05' });
+      await fails({ ...item, end: item.start });
+      await fails({ ...item, end: '2026-10-06' });
+      await fails({ ...item, allDay: 'yes' });
+      await fails({ ...item, url: 'http://example-home.web.app/upkeep/j1' });
+      await fails({ ...item, url: 'javascript:alert(1)//https://' });
+      await fails({ ...item, updatedAt: 'now' });
+      await fails({ ...item, by: BOB });
+      await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/agenda/a5'), {
+        ...item, title: 'x'.repeat(120), detail: 'x'.repeat(200), who: 'x'.repeat(60), end: item.start + 86400000, status: 'done',
+      }));
+      await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/agenda/a6'), without('status')));
+    });
+  });
+
   describe('push subscriptions', () => {
     const sub = (email: string) => ({
       email,

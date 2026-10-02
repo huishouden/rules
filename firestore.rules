@@ -713,6 +713,30 @@ service cloud.firestore {
           && hhStr(request.resource.data, 'by', 0, 120);
       }
 
+      // The household agenda (@huishouden/pwa-kit/agenda; fields match AGENDA_FIELDS there): every
+      // app's dated things in one place, so the portal shows one calendar and a Today view. Every
+      // member reads all of it; whoever writes an item is recorded as `by`.
+      match /agenda/{itemId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'updatedAt', 'by'])
+          && hhStr(request.resource.data, 'app', 1, 40)
+          && hhStr(request.resource.data, 'ref', 1, 200)
+          && request.resource.data.kind in ['appointment', 'due', 'renewal', 'bill', 'birthday', 'medicine', 'feeding', 'task', 'other']
+          && hhStr(request.resource.data, 'title', 1, 120)
+          && request.resource.data.start is int
+          && (!('end' in request.resource.data) || (request.resource.data.end is int
+            && request.resource.data.end > request.resource.data.start))
+          && request.resource.data.allDay is bool
+          && (!('detail' in request.resource.data) || hhStr(request.resource.data, 'detail', 0, 200))
+          && hhStr(request.resource.data, 'url', 9, 2000)
+          && request.resource.data.url.matches('^https://.*')
+          && (!('who' in request.resource.data) || hhStr(request.resource.data, 'who', 0, 60))
+          && (!('status' in request.resource.data) || request.resource.data.status in ['upcoming', 'overdue', 'done'])
+          && request.resource.data.updatedAt is int
+          && request.resource.data.by == myEmail();
+      }
+
       // Each member's Web Push subscriptions, one per device and app (@huishouden/pwa-kit/push;
       // fields match PUSH_SUBSCRIPTION_FIELDS there). A member sees and manages only their own;
       // the keys are read only by the shared sender (huishouden/notify, a service account).
