@@ -301,6 +301,63 @@ describe('household contents', () => {
     await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/homeTasks/t1')));
   });
 
+  it('lets members keep Home regular events with a valid rule, prep and changes', async () => {
+    const event = {
+      title: 'Garbage pickup',
+      kind: 'trash',
+      rule: { freq: 'week', every: 1, start: '2031-01-02' },
+      time: '07:00',
+      contactId: 'c1',
+      notes: 'Bins by the curb.',
+      prep: { title: 'Take the garbage out', offset: { daysBefore: 1, time: '19:00' }, remind: true },
+      exceptions: { '2031-12-25': { moved: { date: '2031-12-26', time: '08:00' }, note: 'Holiday week' }, '2032-01-01': { skipped: true } },
+      createdAt: 1,
+      by: ALICE,
+    };
+    const ok = (id: string, data: Record<string, unknown>) => assertSucceeds(setDoc(doc(as(ALICE), `households/h1/homeEvents/${id}`), data));
+    const bad = (data: Record<string, unknown>) => assertFails(setDoc(doc(as(ALICE), 'households/h1/homeEvents/bad'), data));
+    const { time: _t, contactId: _c, notes: _n, prep: _p, exceptions: _e, ...bare } = event;
+    await ok('e1', event);
+    await ok('e2', { ...bare, updatedAt: 2 });
+    await ok('e3', { ...bare, kind: 'yard waste', rule: { freq: 'week', every: 2, start: '2031-01-03', days: [1, 4], until: '2031-12-31' } });
+    await ok('e4', { ...bare, kind: 'hoa', rule: { freq: 'month', every: 1, start: '2031-01-14', nth: 2, weekday: 2 } });
+    await ok('e5', { ...bare, kind: 'lawn', rule: { freq: 'month', every: 1, start: '2031-01-31', nth: -1, weekday: 5 } });
+    await ok('e6', { ...bare, kind: 'other', rule: { freq: 'year', every: 1, start: '2031-06-01' }, exceptions: {} });
+    await assertSucceeds(getDoc(doc(as(BOB), 'households/h1/homeEvents/e1')));
+    await assertFails(getDoc(doc(as(MALLORY), 'households/h1/homeEvents/e1')));
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h1/homeEvents/e9'), event));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/homeEvents/not_an_id'), event));
+
+    await bad({ ...event, extra: true });
+    await bad({ ...event, title: '' });
+    await bad({ ...event, kind: 'party' });
+    await bad({ ...event, time: '7pm' });
+    await bad({ ...event, time: '24:00' });
+    await bad({ ...event, rule: { freq: 'day', every: 1, start: '2031-01-02' } });
+    await bad({ ...event, rule: { freq: 'week', every: 0, start: '2031-01-02' } });
+    await bad({ ...event, rule: { freq: 'week', every: 100, start: '2031-01-02' } });
+    await bad({ ...event, rule: { freq: 'week', every: 1 } });
+    await bad({ ...event, rule: { freq: 'week', every: 1, start: '2031-01-02', days: [] } });
+    await bad({ ...event, rule: { freq: 'week', every: 1, start: '2031-01-02', days: [7] } });
+    await bad({ ...event, rule: { freq: 'month', every: 1, start: '2031-01-02', days: [1] } });
+    await bad({ ...event, rule: { freq: 'month', every: 1, start: '2031-01-02', nth: 5, weekday: 1 } });
+    await bad({ ...event, rule: { freq: 'month', every: 1, start: '2031-01-02', nth: 2 } });
+    await bad({ ...event, rule: { freq: 'week', every: 1, start: '2031-01-02', nth: 2, weekday: 1 } });
+    await bad({ ...event, rule: { freq: 'week', every: 1, start: '2031-01-02', until: '2030-01-01' } });
+    await bad({ ...event, rule: { freq: 'week', every: 1, start: '2031-01-02', by: 'x' } });
+    await bad({ ...event, prep: { title: 'Take it out', offset: { daysBefore: 1, time: '19:00' } } });
+    await bad({ ...event, prep: { title: '', offset: { daysBefore: 1, time: '19:00' }, remind: true } });
+    await bad({ ...event, prep: { title: 'Take it out', offset: { daysBefore: 15, time: '19:00' }, remind: true } });
+    await bad({ ...event, prep: { title: 'Take it out', offset: { daysBefore: 1, time: 'evening' }, remind: true } });
+    await bad({ ...event, prep: { title: 'Take it out', offset: { daysBefore: 1, time: '19:00', extra: 1 }, remind: true } });
+    await bad({ ...event, prep: { title: 'Take it out', offset: { daysBefore: 1, time: '19:00' }, remind: 'yes' } });
+    await bad({ ...event, exceptions: { 'next thursday': { skipped: true } } });
+    await bad({ ...event, exceptions: 'none' });
+    const many = Object.fromEntries(Array.from({ length: 101 }, (_, i) => [`2031-${String(1 + Math.floor(i / 28)).padStart(2, '0')}-${String(1 + (i % 28)).padStart(2, '0')}`, { skipped: true }]));
+    await bad({ ...event, exceptions: many });
+    await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/homeEvents/e1')));
+  });
+
   it('lets members keep the Home service history with whole-cent costs', async () => {
     const visit = { date: '2031-07-28', title: 'Pest control visit', taskId: 't1', contactId: 'c1', costCents: 9500, notes: 'Garage too.', createdAt: 1, by: BOB };
     await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/homeServiceLog/e1'), visit));

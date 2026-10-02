@@ -541,6 +541,84 @@ service cloud.firestore {
           && stamped(request.resource.data);
       }
 
+      // Home's regular events: things that come and go on a schedule whether or not anyone does
+      // anything (garbage pickup every Thursday, a lawn service every other Friday). Fields match
+      // EVENT_KEYS in the app's model; `rule` is EventRule, `prep` EventPrep and `exceptions`
+      // OccurrenceChanges in @huishouden/pwa-kit/schedule.
+      function isHhmm(v) {
+        return v is string && v.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+      }
+
+      function isEventRule(r) {
+        return r is map
+          && r.keys().hasOnly(['freq', 'every', 'start', 'days', 'nth', 'weekday', 'until'])
+          && r.get('freq', '') in ['week', 'month', 'year']
+          && r.get('every', 0) is int && r.every >= 1 && r.every <= 99
+          && isYmd(r.get('start', null))
+          && (!('until' in r) || (isYmd(r.until) && r.until >= r.start))
+          && (!('days' in r) || (r.freq == 'week' && r.days is list
+            && r.days.size() >= 1 && r.days.size() <= 7 && r.days.hasOnly([0, 1, 2, 3, 4, 5, 6])))
+          && (('nth' in r) == ('weekday' in r))
+          && (!('nth' in r) || (r.freq == 'month' && r.nth in [1, 2, 3, 4, -1] && r.weekday in [0, 1, 2, 3, 4, 5, 6]));
+      }
+
+      function isEventPrep(p) {
+        return p is map
+          && p.keys().hasOnly(['title', 'offset', 'remind'])
+          && p.keys().hasAll(['title', 'offset', 'remind'])
+          && p.title is string && p.title.size() > 0 && p.title.size() <= 120
+          && p.offset is map
+          && p.offset.keys().hasOnly(['daysBefore', 'time'])
+          && p.offset.get('daysBefore', null) is int && p.offset.daysBefore >= 0 && p.offset.daysBefore <= 14
+          && isHhmm(p.offset.get('time', null))
+          && p.remind is bool;
+      }
+
+      // Changes to single occurrences, keyed by the day the schedule put each on: at most 100, each
+      // key a day (checked as one joined string, since rules have no loops). The app reads every
+      // value defensively (toChange in the kit), keeping only a valid move or skip and a short note.
+      function isOccurrenceChanges(c) {
+        let day = '[0-9]{4}-[0-9]{2}-[0-9]{2}';
+        return c is map && c.size() <= 100
+          && (c.size() == 0 || c.keys().join(' ').matches(day + '( ' + day + ')*'));
+      }
+
+      match /homeEvents/{eventId} {
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer([])
+          && eventId.matches('[A-Za-z0-9-]{1,100}')
+          && request.resource.data.keys().hasOnly(['title', 'kind', 'rule', 'time', 'contactId', 'notes', 'prep', 'exceptions', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 120
+          && request.resource.data.kind in ['trash', 'recycling', 'yard waste', 'lawn', 'hoa', 'cleaning', 'other']
+          && isEventRule(request.resource.data.rule)
+          && (!('time' in request.resource.data) || isHhmm(request.resource.data.time))
+          && optString(request.resource.data, 'contactId', 100)
+          && optString(request.resource.data, 'notes', 1000)
+          && (!('prep' in request.resource.data) || isEventPrep(request.resource.data.prep))
+          && (!('exceptions' in request.resource.data) || isOccurrenceChanges(request.resource.data.exceptions))
+          && stamped(request.resource.data);
+      }
+
+      // A thing to do before one occurrence, ticked off: `<eventId>_<day of the occurrence>` (event
+      // ids have no underscore, so the id splits back into the event's). Anyone
+      // in the household ticks it in their own name (helpers and kids included: putting the bins out
+      // is everyday work), for an event that exists; Undo removes your own tick, and admins and
+      // members remove anyone's.
+      match /homeEventPrep/{prepId} {
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if isMember()
+          && prepId.matches('[A-Za-z0-9-]{1,100}_[0-9]{4}-[0-9]{2}-[0-9]{2}')
+          && exists(/databases/$(database)/documents/households/$(householdId)/homeEvents/$(prepId.split('_')[0]))
+          && request.resource.data.keys().hasOnly(['done', 'at', 'by'])
+          && request.resource.data.done == true
+          && request.resource.data.at is int
+          && signsAsMe();
+      }
+
       // Huishouden Bills: bill sources (which emails are whose bills), bills (bill/v1), and each
       // member's last email check. Field lists match the app's src/lib/model.ts.
       function billKinds() {
