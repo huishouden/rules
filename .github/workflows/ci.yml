@@ -54,6 +54,8 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
@@ -61,3 +63,35 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       - run: bun install --frozen-lockfile
       - run: bunx firebase deploy --only firestore:rules,firestore:indexes --project huishouden-piekstra --non-interactive --message "${{ github.sha }}"
+
+  # The same rules on the staging project (pwa-kit STANDARD.md "Staging"), where app PRs run their
+  # signed-in tests: on every same-repo PR, so a rules change can be tried with the apps before it
+  # merges, and on main, so staging returns to main's rules; a manual run deploys its branch there
+  # (production still deploys from pushes to main only). Never a fork's PR. Skipped until the
+  # bootstrap's --staging pass sets STAGING_GCP_WIF_PROVIDER.
+  deploy-staging:
+    needs: [leak-scan, test]
+    if: >-
+      vars.STAGING_GCP_WIF_PROVIDER != '' && (
+        (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+        || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: rules-staging
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          workload_identity_provider: ${{ vars.STAGING_GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.STAGING_GCP_DEPLOY_SA }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - run: bun install --frozen-lockfile
+      - run: bunx firebase deploy --only firestore:rules,firestore:indexes --project huishouden-staging --non-interactive --message "staging ${{ github.event.pull_request.head.sha || github.sha }}"
