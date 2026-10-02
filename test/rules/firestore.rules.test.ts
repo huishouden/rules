@@ -968,7 +968,7 @@ describe('attacks', () => {
   });
 
   it('keeps the members a list of lowercase emails', async () => {
-    const h1 = doc(as(BOB), 'households/h1');
+    const h1 = doc(as(ALICE), 'households/h1');
     await assertFails(updateDoc(h1, { members: { [BOB]: true } }));
     await assertFails(updateDoc(h1, { members: [ALICE, BOB, 'Carol@Example.com'] }));
     await assertFails(updateDoc(h1, { members: [ALICE, BOB, 7] }));

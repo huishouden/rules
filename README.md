@@ -27,5 +27,33 @@ bun install
 bun run test   # needs Java 21 for the emulator
 ```
 
-Every block follows the same pattern: members only (`isMember()`), an exact field list
-(`keys().hasOnly([...])`), and type and size checks on each field.
+Every block follows the same pattern: who may read and write (by role, below), an exact field
+list (`keys().hasOnly([...])`), and type and size checks on each field.
+
+## Roles
+
+Each member has a role in the household document's `roles` map (`{ "<email>": "admin" }`). Anyone
+it doesn't name is a member, except the household's creator (first in `members`), who is an admin.
+`@huishouden/pwa-kit/roles` has the same table for the apps (`householdRole`, `can`, `useRole`).
+
+| | Admin | Member | Helper | Kid |
+|---|---|---|---|---|
+| Invite and remove people, set roles (never their own) | yes | | | |
+| Rename the household; settings, food preferences, portal layout, lists, cars, meal plan, medicine courses | yes | yes | | |
+| Read lists, chores, pets, baby, home, car, contacts and appointments | yes | yes | yes | yes |
+| Add items and log feeds, sleep, diapers, meals, readings and visits | yes | yes | yes | yes |
+| Tick off anyone's item, chore, job, reminder or service | yes | yes | yes | yes |
+| Change or delete what someone else added | yes | yes | own only | own only |
+| Give pet medicine (dose logs) | yes | yes | if the course allows them | |
+| Read or write Spending and Bills | yes | yes | | |
+| Read contacts, appointments and agenda items marked private | yes | yes | | |
+
+- Helpers and kids add records in their own name (`by` is their email) and may change or delete
+  only those; on anyone's record they may change only the fields that tick it off.
+- A medicine course's `givers` is `all` (every helper, the default) or `approved` (only the helpers
+  in `approvedHelpers`).
+- `private: true` hides a contact, appointment, agenda item or reminder from helpers and kids. A
+  record without the flag is private to them until it is written with `private: false`, so their
+  queries ask for `private == false`; the apps write the flag on every save.
+- Reminders and agenda items are kept in step by whichever device opens an app, so helpers and kids
+  may write the open ones, but never Spending's or Bills'.
