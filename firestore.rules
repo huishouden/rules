@@ -13,9 +13,83 @@ service cloud.firestore {
     }
 
     match /households/{householdId} {
+      function household() {
+        return get(/databases/$(database)/documents/households/$(householdId)).data;
+      }
+
       function isMember() {
-        return signedIn()
-          && myEmail() in get(/databases/$(database)/documents/households/$(householdId)).data.members;
+        return signedIn() && myEmail() in household().members;
+      }
+
+      // Roles (@huishouden/pwa-kit/roles): `roles` maps a member's email to admin, member, helper or
+      // kid. Anyone it doesn't name is a member, except the household's creator (members[0], which
+      // the create rule guarantees and the update rule keeps) who is an admin. get() is cached per
+      // request, so every check below reads the household document once.
+      function roleOf(d, email) {
+        return d.get('roles', {}).get(email, d.members[0] == email ? 'admin' : 'member');
+      }
+
+      function role() {
+        return roleOf(household(), myEmail());
+      }
+
+      // Admins and members: everything in every app (admins also manage people and roles).
+      function staff() {
+        return isMember() && role() in ['admin', 'member'];
+      }
+
+      // Helpers (a babysitter, the shared wall tablet) and kids: they read the household's everyday
+      // things, tick them off and add their own, and change or remove only what they added.
+      function helping() {
+        return isMember() && role() in ['helper', 'kid'];
+      }
+
+      function signsAsMe() {
+        return request.resource.data.get('by', '') == myEmail();
+      }
+
+      function addedByMe() {
+        return resource.data.get('by', '') == myEmail();
+      }
+
+      // Who may create or update a shared record: admins and members always; helpers and kids
+      // create in their own name and update what they added, and on anyone's record may change
+      // only `ticks`, the fields that check it off.
+      function writer(ticks) {
+        return staff()
+          || (helping() && (request.method == 'create'
+            ? signsAsMe()
+            : ((addedByMe() && signsAsMe()) || request.resource.data.diff(resource.data).affectedKeys().hasOnly(ticks))));
+      }
+
+      function canRemove() {
+        return staff() || (helping() && addedByMe());
+      }
+
+      // Private records (contacts, appointments, agenda items and reminders with `private: true`)
+      // are for admins and members. One without the flag counts as private to helpers and kids
+      // until it is written with `private: false`, so nothing written before roles existed leaks;
+      // their queries filter on `private == false`.
+      function readable() {
+        return staff() || (isMember() && resource.data.get('private', true) == false);
+      }
+
+      function openBefore() {
+        return resource.data.get('private', true) == false;
+      }
+
+      // `private` is optional and a boolean. A helper's or kid's writes stay open, never private
+      // and never over a private record, so they never write what they can't read.
+      function privateFlag() {
+        return request.resource.data.get('private', false) is bool
+          && (staff() || (request.resource.data.get('private', true) == false
+            && (request.method == 'create' || openBefore())));
+      }
+
+      // Spending and Bills: money, for admins and members only, including what those apps publish
+      // to the shared agenda and reminders.
+      function moneyApp(app) {
+        return app in ['spending', 'bills'];
       }
 
       allow read: if signedIn() && myEmail() in resource.data.members;
@@ -33,67 +107,94 @@ service cloud.firestore {
           && l.join(' ').matches(one + '( ' + one + ')*') && l.join(' ').split(' ') == l;
       }
 
-      // A new household starts with only its creator; others are invited from inside. Apps open the
-      // oldest household a person belongs to, so `createdAt` must be the real time of creation
-      // (within an hour, for clock drift): a backdated household could otherwise invite someone
-      // and take the place of their own in every app.
+      // A new household starts with only its creator, its admin; others are invited from inside.
+      // Apps open the oldest household a person belongs to, so `createdAt` must be the real time
+      // of creation (within an hour, for clock drift): a backdated household could otherwise
+      // invite someone and take the place of their own in every app.
       allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['name', 'members', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['name', 'members', 'createdAt', 'roles'])
         && request.resource.data.members == [myEmail()]
+        && (!('roles' in request.resource.data) || (request.resource.data.roles is map
+          && request.resource.data.roles.keys().hasOnly([myEmail()])
+          && request.resource.data.roles.get(myEmail(), '') == 'admin'))
         && householdName(request.resource.data)
         && request.resource.data.createdAt is int
         && request.resource.data.createdAt > request.time.toMillis() - 3600000
         && request.resource.data.createdAt < request.time.toMillis() + 3600000;
 
-      // Members may invite or remove others but cannot edit themselves out by accident.
-      // Separately, each member records their own first sign-in in `joined`, and only their own.
+      // Roles name only members, each with one of the four roles.
+      function rolesShape(d) {
+        return !('roles' in d) || (d.roles is map
+          && d.roles.keys().hasOnly(d.members)
+          && d.roles.values().hasOnly(['admin', 'member', 'helper', 'kid']));
+      }
+
+      // Admins invite and remove people and set roles, but never their own: an admin can't remove
+      // or demote themselves, so a household always keeps one. The creator is the implicit admin
+      // as members[0], so whoever else becomes first in the list must have their role written out.
+      // Members may rename the household; helpers and kids change nothing here. Separately, each
+      // member records their own first sign-in in `joined`, and only their own.
       allow update: if signedIn()
         && myEmail() in resource.data.members
         && (
-          (memberEmails(request.resource.data.members)
-            && myEmail() in request.resource.data.members
+          (roleOf(resource.data, myEmail()) == 'admin'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'members', 'roles'])
+            && memberEmails(request.resource.data.members)
             && householdName(request.resource.data)
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'members']))
+            && rolesShape(request.resource.data)
+            && myEmail() in request.resource.data.members
+            && roleOf(request.resource.data, myEmail()) == 'admin'
+            && (request.resource.data.members[0] == resource.data.members[0]
+              || request.resource.data.members[0] in request.resource.data.get('roles', {})))
+          || (roleOf(resource.data, myEmail()) == 'member'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+            && householdName(request.resource.data))
           || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['joined'])
             && request.resource.data.joined == resource.data.get('joined', []).concat([myEmail()]))
         );
 
       allow delete: if false;
 
-      // Lists are written in the same batch that creates the household, so membership is
-      // checked against the state after the write.
-      function isMemberAfter() {
-        return signedIn()
-          && myEmail() in getAfter(/databases/$(database)/documents/households/$(householdId)).data.members;
+      // Lists are written in the same batch that creates the household, so the role is checked
+      // against the state after the write. Lists are the household's setup: admins and members.
+      function staffAfter() {
+        let d = getAfter(/databases/$(database)/documents/households/$(householdId)).data;
+        return signedIn() && myEmail() in d.members && roleOf(d, myEmail()) in ['admin', 'member'];
       }
 
       match /lists/{listId} {
         allow read: if isMember();
-        allow write: if isMemberAfter();
+        allow write: if staffAfter();
       }
 
       match /items/{itemId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer(['completed', 'completedAt', 'updatedAt', 'subtasks', 'position'])
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 200
           && request.resource.data.listId is string
           && request.resource.data.completed is bool
-          && (!('subtasks' in request.resource.data) || request.resource.data.subtasks.size() <= 50)
+          && (!('subtasks' in request.resource.data) || (request.resource.data.subtasks is list && request.resource.data.subtasks.size() <= 50))
+          // Ticking a step off someone else's item keeps its steps (Tasks rewrites the whole list).
+          && (staff() || request.method == 'create' || addedByMe()
+            || request.resource.data.get('subtasks', []).size() == resource.data.get('subtasks', []).size())
           // Shown as a link on every member's list: a web address or nothing.
           && (!('link' in request.resource.data) || request.resource.data.link == ''
             || (request.resource.data.link is string && request.resource.data.link.size() <= 2000
               && request.resource.data.link.matches('(?i)https?://[^ ]+')));
       }
 
+      // Counts and categories remembered as anyone adds and ticks items, so any member writes them.
       match /staples/{stapleId} {
         allow read, write: if isMember();
       }
 
       match /stores/{storeId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if staff();
+        allow create, update: if staff()
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 80
@@ -109,8 +210,9 @@ service cloud.firestore {
         }
       }
 
-      // Huishouden Spending: the household's card spending, written by members' browsers (statement
-      // files, card alert emails, category edits). A household's legacy Apps Script also writes
+      // Huishouden Spending: the household's card spending, for admins and members only, written by
+      // their browsers (statement files, card alert emails, category edits). A household's legacy
+      // Apps Script also writes
       // spendingTransactions with its owner's IAM credentials, which bypass these rules. Field lists
       // match TRANSACTION_FIELDS, SETTINGS_FIELDS, CARD_FIELDS, CSV_FIELDS and RULE_FIELDS in the
       // app's src/data/model.ts.
@@ -125,8 +227,8 @@ service cloud.firestore {
       }
 
       match /spendingTransactions/{txId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read, delete: if staff();
+        allow create, update: if staff()
           && request.resource.data.keys().hasOnly(['date', 'description', 'amount', 'category', 'card', 'type', 'source', 'last4', 'emailId', 'createdAt', 'updatedAt', 'by'])
           && isYmd(request.resource.data.date)
           && spStr(request.resource.data, 'description', 1, 200)
@@ -145,9 +247,9 @@ service cloud.firestore {
 
       // One document, `main`: budget, currency, words never counted, Gmail labels, last email check.
       match /spendingSettings/{docId} {
-        allow read: if isMember();
+        allow read: if staff();
         allow delete: if false;
-        allow create, update: if isMember()
+        allow create, update: if staff()
           && docId == 'main'
           && request.resource.data.keys().hasOnly(['monthlyBudget', 'currencySymbol', 'ignoredKeywords', 'alertLabels', 'emailCheckedAt', 'emailCheckedBy', 'updatedAt', 'updatedBy'])
           && (!('monthlyBudget' in request.resource.data) || (request.resource.data.monthlyBudget is number
@@ -162,8 +264,8 @@ service cloud.firestore {
       }
 
       match /spendingCards/{cardId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read, delete: if staff();
+        allow create, update: if staff()
           && request.resource.data.keys().hasOnly(['name', 'last4', 'issuer', 'alertWords', 'csv', 'createdAt', 'updatedAt', 'by'])
           && spStr(request.resource.data, 'name', 1, 60)
           && (!('last4' in request.resource.data) || (request.resource.data.last4 is string && request.resource.data.last4.matches('^[0-9]{4}$')))
@@ -180,8 +282,8 @@ service cloud.firestore {
 
       // "When the merchant contains X, the category is Y."
       match /spendingRules/{ruleId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read, delete: if staff();
+        allow create, update: if staff()
           && request.resource.data.keys().hasOnly(['contains', 'category', 'createdAt', 'updatedAt', 'by'])
           && spStr(request.resource.data, 'contains', 1, 80)
           && spStr(request.resource.data, 'category', 1, 60)
@@ -193,15 +295,16 @@ service cloud.firestore {
       // Huishouden Baby: the household's shared baby log, checklists and appointments.
       match /babyProfile/{docId} {
         allow read: if isMember();
-        allow write: if isMember()
+        allow write: if staff()
           && docId == 'main'
           && request.resource.data.keys().hasOnly(['name', 'dueDate', 'birthDate', 'updatedAt', 'updatedBy'])
           && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 60));
       }
 
       match /babyEvents/{eventId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer([])
           && request.resource.data.keys().hasOnly(['kind', 'at', 'endAt', 'side', 'method', 'amountMl', 'diaper', 'note', 'by', 'createdAt', 'updatedAt'])
           && request.resource.data.kind in ['feed', 'sleep', 'diaper', 'pump']
           && request.resource.data.at is int
@@ -209,16 +312,18 @@ service cloud.firestore {
       }
 
       match /babyChecklists/{itemId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer(['done', 'order'])
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 200;
       }
 
       match /babyAppointments/{appointmentId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if readable();
+        allow delete: if canRemove() && (staff() || openBefore());
+        allow create, update: if writer([]) && privateFlag()
           && request.resource.data.title is string
           && request.resource.data.title.size() > 0
           && request.resource.data.title.size() <= 120
@@ -246,8 +351,9 @@ service cloud.firestore {
       }
 
       match /carVehicles/{vehicleId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if staff();
+        allow create, update: if staff()
           && request.resource.data.keys().hasOnly(['name', 'make', 'model', 'year', 'notes', 'createdAt', 'updatedAt', 'by'])
           && carName(request.resource.data, 'name', 60)
           && carStr(request.resource.data, 'make', 40)
@@ -258,8 +364,9 @@ service cloud.firestore {
       }
 
       match /carServiceItems/{itemId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer(['lastDate', 'lastOdometer', 'updatedAt'])
           && request.resource.data.keys().hasOnly(['vehicleId', 'name', 'everyMonths', 'everyDistance', 'lastDate', 'lastOdometer', 'notes', 'createdAt', 'updatedAt', 'by'])
           && carName(request.resource.data, 'vehicleId', 128)
           && carName(request.resource.data, 'name', 80)
@@ -273,8 +380,9 @@ service cloud.firestore {
       }
 
       match /carOdometer/{readingId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer([])
           && request.resource.data.keys().hasOnly(['vehicleId', 'date', 'reading', 'note', 'createdAt', 'updatedAt', 'by'])
           && carName(request.resource.data, 'vehicleId', 128)
           && carYmd(request.resource.data, 'date')
@@ -285,8 +393,9 @@ service cloud.firestore {
       }
 
       match /carRenewals/{renewalId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer(['dueDate', 'updatedAt'])
           && request.resource.data.keys().hasOnly(['vehicleId', 'kind', 'name', 'dueDate', 'everyMonths', 'notes', 'createdAt', 'updatedAt', 'by'])
           && carStr(request.resource.data, 'vehicleId', 128)
           && request.resource.data.kind in ['registration', 'insurance', 'inspection', 'toll', 'other']
@@ -298,8 +407,9 @@ service cloud.firestore {
       }
 
       match /carServiceLog/{entryId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer([])
           && request.resource.data.keys().hasOnly(['vehicleId', 'date', 'odometer', 'what', 'serviceItemIds', 'shopId', 'costCents', 'notes', 'createdAt', 'updatedAt', 'by'])
           && carName(request.resource.data, 'vehicleId', 128)
           && carYmd(request.resource.data, 'date')
@@ -313,9 +423,10 @@ service cloud.firestore {
       }
 
       match /carAppointments/{appointmentId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
-          && request.resource.data.keys().hasOnly(['vehicleId', 'title', 'at', 'location', 'notes', 'shopId', 'calendarEventId', 'calendarLink', 'createdAt', 'updatedAt', 'by'])
+        allow read: if readable();
+        allow delete: if canRemove() && (staff() || openBefore());
+        allow create, update: if writer([]) && privateFlag()
+          && request.resource.data.keys().hasOnly(['vehicleId', 'title', 'at', 'location', 'notes', 'shopId', 'calendarEventId', 'calendarLink', 'private', 'createdAt', 'updatedAt', 'by'])
           && carStr(request.resource.data, 'vehicleId', 128)
           && carName(request.resource.data, 'title', 120)
           && request.resource.data.at is int
@@ -331,7 +442,7 @@ service cloud.firestore {
       // One document, `main`: the unit the household's odometers read in.
       match /carSettings/{docId} {
         allow read: if isMember();
-        allow write: if isMember()
+        allow write: if staff()
           && docId == 'main'
           && request.resource.data.keys().hasOnly(['distanceUnit', 'updatedAt', 'updatedBy'])
           && request.resource.data.distanceUnit in ['mi', 'km']
@@ -373,8 +484,9 @@ service cloud.firestore {
       }
 
       match /homeTasks/{taskId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer(['due', 'lastDone', 'updatedAt'])
           && request.resource.data.keys().hasOnly(['title', 'category', 'schedule', 'due', 'lastDone', 'contactId', 'notes', 'calendarEventId', 'calendarLink', 'createdAt', 'updatedAt', 'by'])
           && request.resource.data.title is string
           && request.resource.data.title.size() > 0
@@ -391,8 +503,9 @@ service cloud.firestore {
       }
 
       match /homeServiceLog/{entryId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer([])
           && request.resource.data.keys().hasOnly(['date', 'title', 'taskId', 'contactId', 'who', 'costCents', 'notes', 'calendarEventId', 'calendarLink', 'createdAt', 'updatedAt', 'by'])
           && isYmd(request.resource.data.date)
           && request.resource.data.title is string
@@ -410,8 +523,9 @@ service cloud.firestore {
       }
 
       match /homeWarranties/{warrantyId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer([])
           && request.resource.data.keys().hasOnly(['item', 'details', 'purchaseDate', 'warrantyEnd', 'receiptUrl', 'manualUrl', 'contactId', 'notes', 'createdAt', 'updatedAt', 'by'])
           && request.resource.data.item is string
           && request.resource.data.item.size() > 0
@@ -447,8 +561,8 @@ service cloud.firestore {
       }
 
       match /billSources/{sourceId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read, delete: if staff();
+        allow create, update: if staff()
           && request.resource.data.keys().hasOnly(['name', 'kind', 'from', 'subject', 'label', 'payUrl', 'autopay', 'createdAt', 'createdBy', 'updatedAt'])
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
@@ -466,8 +580,8 @@ service cloud.firestore {
       }
 
       match /bills/{billId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read, delete: if staff();
+        allow create, update: if staff()
           && request.resource.data.keys().hasOnly(['schema', 'source', 'sourceId', 'kind', 'label', 'due', 'amountDue', 'status', 'autopay', 'period', 'payUrl', 'repeat', 'emailId', 'paidAt', 'paidBy', 'paidVia', 'dismissed', 'createdAt', 'createdBy', 'updatedAt', 'observedAt'])
           && request.resource.data.schema == 'bill/v1'
           && request.resource.data.source in ['email', 'manual']
@@ -498,8 +612,8 @@ service cloud.firestore {
 
       // One per member, keyed by their email: only they record their own check.
       match /billSync/{email} {
-        allow read: if isMember();
-        allow create, update: if isMember()
+        allow read: if staff();
+        allow create, update: if staff()
           && email == myEmail()
           && request.resource.data.keys().hasOnly(['checkedAt', 'by', 'sources', 'emails', 'bills', 'errors'])
           && request.resource.data.by == myEmail()
@@ -509,7 +623,7 @@ service cloud.firestore {
           && request.resource.data.bills is int
           && request.resource.data.errors is list
           && request.resource.data.errors.size() <= 20;
-        allow delete: if isMember() && email == myEmail();
+        allow delete: if staff() && email == myEmail();
       }
 
       // Huishouden Pet: pets, care reminders and the doses given, appointments, weights, records, the
@@ -532,8 +646,9 @@ service cloud.firestore {
       }
 
       match /petProfiles/{petId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer([])
           && request.resource.data.keys().hasOnly(['name', 'species', 'breed', 'birthDate', 'birthDateApprox', 'weightUnit', 'targetWeight', 'targetNote', 'notes', 'createdAt', 'updatedAt', 'by'])
           && petStr(request.resource.data, 'name', 1, 60)
           && request.resource.data.species in ['dog', 'cat', 'rabbit', 'bird', 'fish', 'reptile', 'small pet', 'other']
@@ -550,11 +665,15 @@ service cloud.firestore {
       }
 
       match /petReminders/{reminderId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer(['lastDoneAt', 'due', 'updatedAt'])
           && request.resource.data.keys().hasOnly(['petId', 'kind', 'title', 'every', 'unit', 'due', 'lastDoneAt', 'notes', 'createdAt', 'updatedAt', 'by'])
           && petStr(request.resource.data, 'petId', 1, 128)
           && request.resource.data.kind in ['flea-tick', 'heartworm', 'vaccine', 'deworming', 'medication', 'other']
+          // Ticking off a medicine reminder records it given: never by a kid.
+          && (role() != 'kid' || request.method == 'create' || addedByMe()
+            || !(resource.data.kind in ['flea-tick', 'heartworm', 'deworming', 'medication']))
           && petStr(request.resource.data, 'title', 1, 80)
           && ('every' in request.resource.data) == ('unit' in request.resource.data)
           && (!('every' in request.resource.data) || (request.resource.data.every is int
@@ -566,9 +685,11 @@ service cloud.firestore {
           && petAuthored(request.resource.data);
       }
 
+      // Doses given for a care reminder (flea and tick, heartworm, medication): never by kids.
       match /petDoses/{doseId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer([]) && role() != 'kid'
           && request.resource.data.keys().hasOnly(['petId', 'reminderId', 'title', 'at', 'by', 'createdAt'])
           && petStr(request.resource.data, 'petId', 1, 128)
           && petStr(request.resource.data, 'reminderId', 1, 128)
@@ -578,9 +699,10 @@ service cloud.firestore {
       }
 
       match /petAppointments/{appointmentId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
-          && request.resource.data.keys().hasOnly(['petIds', 'kind', 'title', 'at', 'location', 'notes', 'contactId', 'calendarEventId', 'calendarLink', 'createdAt', 'by'])
+        allow read: if readable();
+        allow delete: if canRemove() && (staff() || openBefore());
+        allow create, update: if writer([]) && privateFlag()
+          && request.resource.data.keys().hasOnly(['petIds', 'kind', 'title', 'at', 'location', 'notes', 'contactId', 'calendarEventId', 'calendarLink', 'private', 'createdAt', 'by'])
           && request.resource.data.petIds is list
           && request.resource.data.petIds.size() <= 10
           && request.resource.data.kind in ['vet', 'grooming', 'boarding', 'other']
@@ -596,8 +718,9 @@ service cloud.firestore {
       }
 
       match /petWeights/{weightId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer([])
           && request.resource.data.keys().hasOnly(['petId', 'at', 'value', 'unit', 'by', 'createdAt'])
           && petStr(request.resource.data, 'petId', 1, 128)
           && request.resource.data.at is int
@@ -609,8 +732,9 @@ service cloud.firestore {
       }
 
       match /petRecords/{recordId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer([])
           && request.resource.data.keys().hasOnly(['petId', 'title', 'date', 'text', 'createdAt', 'updatedAt', 'by'])
           && petStr(request.resource.data, 'petId', 1, 128)
           && petStr(request.resource.data, 'title', 1, 120)
@@ -621,8 +745,9 @@ service cloud.firestore {
 
       // The daily feeding board: each pet's meals (AM, PM, ...) and the feeds that tick them.
       match /petMeals/{mealId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer([])
           && request.resource.data.keys().hasOnly(['petId', 'name', 'time', 'food', 'portion', 'note', 'createdAt', 'updatedAt', 'by'])
           && petStr(request.resource.data, 'petId', 1, 128)
           && petStr(request.resource.data, 'name', 1, 40)
@@ -635,8 +760,9 @@ service cloud.firestore {
       }
 
       match /petFeedings/{feedingId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer([])
           && request.resource.data.keys().hasOnly(['petId', 'mealId', 'at', 'portion', 'note', 'by', 'createdAt', 'updatedAt'])
           && petStr(request.resource.data, 'petId', 1, 128)
           && petOptStr(request.resource.data, 'mealId', 128)
@@ -647,10 +773,15 @@ service cloud.firestore {
       }
 
       // Short medicine courses ("1 tablet twice a day for 7 days") and the doses given.
+      // Who may give a course: admins and members always; helpers when `givers` is 'all' (the
+      // default) or they are in `approvedHelpers`; kids never. Only admins and members set it.
       match /petMedCourses/{courseId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
-          && request.resource.data.keys().hasOnly(['petId', 'name', 'dose', 'timesPerDay', 'times', 'startDate', 'days', 'withFood', 'notes', 'createdAt', 'updatedAt', 'by'])
+        allow read: if isMember();
+        allow delete: if staff();
+        allow create, update: if staff()
+          && request.resource.data.keys().hasOnly(['petId', 'name', 'dose', 'timesPerDay', 'times', 'startDate', 'days', 'withFood', 'notes', 'givers', 'approvedHelpers', 'createdAt', 'updatedAt', 'by'])
+          && (!('givers' in request.resource.data) || request.resource.data.givers in ['all', 'approved'])
+          && (!('approvedHelpers' in request.resource.data) || hhEmails(request.resource.data.approvedHelpers))
           && petStr(request.resource.data, 'petId', 1, 128)
           && petStr(request.resource.data, 'name', 1, 80)
           && petStr(request.resource.data, 'dose', 0, 80)
@@ -671,8 +802,9 @@ service cloud.firestore {
       // One small avatar photo per pet, keyed by the pet's id, apart from the profile so lists stay
       // light: a WebP or JPEG data URL (@huishouden/pwa-kit/photo), at most 100 000 characters.
       match /petPhotos/{petId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer([])
           && request.resource.data.keys().hasOnly(['data', 'updatedAt', 'by'])
           && request.resource.data.data is string
           && request.resource.data.data.size() <= 100000
@@ -681,9 +813,21 @@ service cloud.firestore {
           && petStr(request.resource.data, 'by', 3, 254);
       }
 
+      function approvedFor(course) {
+        return course.get('givers', 'all') == 'all' || myEmail() in course.get('approvedHelpers', []);
+      }
+
+      function mayGive(courseId) {
+        return staff() || (role() == 'helper'
+          && approvedFor(get(/databases/$(database)/documents/households/$(householdId)/petMedCourses/$(courseId)).data));
+      }
+
       match /petMedDoses/{doseId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer([])
+          && petStr(request.resource.data, 'courseId', 1, 128)
+          && mayGive(request.resource.data.courseId)
           && request.resource.data.keys().hasOnly(['petId', 'courseId', 'slot', 'at', 'by', 'createdAt'])
           && petStr(request.resource.data, 'petId', 1, 128)
           && petStr(request.resource.data, 'courseId', 1, 128)
@@ -712,9 +856,10 @@ service cloud.firestore {
       // CONTACT_FIELDS and CONTACT_LIMITS there). Links are web addresses only, never javascript: or
       // data: URLs, since every app renders them as links.
       match /contacts/{contactId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
-          && request.resource.data.keys().hasOnly(['name', 'role', 'phone', 'email', 'website', 'address', 'mapsUrl', 'notes', 'apps', 'createdAt', 'updatedAt', 'by'])
+        allow read: if readable();
+        allow delete: if canRemove() && (staff() || openBefore());
+        allow create, update: if writer([]) && privateFlag()
+          && request.resource.data.keys().hasOnly(['name', 'role', 'phone', 'email', 'website', 'address', 'mapsUrl', 'notes', 'apps', 'private', 'createdAt', 'updatedAt', 'by'])
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 120
@@ -739,10 +884,37 @@ service cloud.firestore {
         return d[k] is string && d[k].size() >= lo && d[k].size() <= hi;
       }
 
+      // Up to 12 lowercase emails (as memberEmails, possibly none).
+      function hhEmails(l) {
+        let one = '[^ @A-Z]{1,128}@[^ @A-Z]{1,128}';
+        return l is list && l.size() <= 12
+          && (l.size() == 0 || (l.join(' ').matches(one + '( ' + one + ')*') && l.join(' ').split(' ') == l));
+      }
+
+      //
+      // Reminders and agenda items are worked out from each app's data on whichever device opens
+      // it, the shared tablet included, so helpers and kids keep the open ones in step too: any
+      // that aren't private and aren't Spending's or Bills'.
+      // Spending's and Bills' items are always private. A helper's items link only into the apps
+      // (the portal opens the link, the sender pushes it) and never re-arm a sent reminder.
+      function openDerived() {
+        return (staff() && (!moneyApp(request.resource.data.app) || request.resource.data.get('private', true) == true))
+          || (helping() && !moneyApp(request.resource.data.app) && privateFlag()
+            && (request.method == 'create' || !moneyApp(resource.data.app))
+            && request.resource.data.by == myEmail()
+            && request.resource.data.url.matches('https://huishouden(-[a-z]+)*[.]web[.]app/.*')
+            && (request.method == 'create' || resource.data.get('sent', false) == false || request.resource.data.get('sent', false) == true));
+      }
+
+      function openDerivedRemoval() {
+        return staff() || (helping() && openBefore() && !moneyApp(resource.data.app));
+      }
+
       match /reminders/{reminderId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
-          && request.resource.data.keys().hasOnly(['app', 'title', 'body', 'at', 'url', 'recipients', 'ref', 'sent', 'sentAt', 'createdAt', 'by'])
+        allow read: if readable();
+        allow delete: if openDerivedRemoval();
+        allow create, update: if openDerived()
+          && request.resource.data.keys().hasOnly(['app', 'title', 'body', 'at', 'url', 'recipients', 'ref', 'private', 'sent', 'sentAt', 'createdAt', 'by'])
           && hhStr(request.resource.data, 'app', 1, 40)
           && hhStr(request.resource.data, 'title', 1, 120)
           && hhStr(request.resource.data, 'body', 0, 500)
@@ -761,12 +933,14 @@ service cloud.firestore {
       }
 
       // The household agenda (@huishouden/pwa-kit/agenda; fields match AGENDA_FIELDS there): every
-      // app's dated things in one place, so the portal shows one calendar and a Today view. Every
-      // member reads all of it; whoever writes an item is recorded as `by`.
+      // app's dated things in one place, so the portal shows one calendar and a Today view. Admins and
+      // members read all of it, helpers and kids the items with `private: false`; whoever writes an
+      // item is recorded as `by`.
       match /agenda/{itemId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
-          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'updatedAt', 'by'])
+        allow read: if readable();
+        allow delete: if openDerivedRemoval();
+        allow create, update: if openDerived()
+          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'updatedAt', 'by'])
           && hhStr(request.resource.data, 'app', 1, 40)
           && hhStr(request.resource.data, 'ref', 1, 200)
           && request.resource.data.kind in ['appointment', 'due', 'renewal', 'bill', 'birthday', 'medicine', 'feeding', 'task', 'other']
@@ -831,7 +1005,7 @@ service cloud.firestore {
       match /settings/{docId} {
         allow read: if isMember();
         allow delete: if false;
-        allow create, update: if isMember() && (
+        allow create, update: if staff() && (
           (docId == 'portal'
             && request.resource.data.keys().hasOnly(['order', 'hidden', 'updatedAt', 'by'])
             && hhAppNames(request.resource.data.order)
@@ -863,13 +1037,16 @@ service cloud.firestore {
         );
       }
 
+      // Meal ideas, favourites and the meal plan are the household's choices: admins and members.
       match /favorites/{favoriteId} {
-        allow read, write: if isMember();
+        allow read: if isMember();
+        allow write: if staff();
       }
 
       match /menus/{menuId} {
-        allow read, delete: if isMember();
-        allow create: if isMember()
+        allow read: if isMember();
+        allow delete: if staff();
+        allow create: if staff()
           && request.resource.data.meals is list
           && request.resource.data.meals.size() <= 30;
       }
@@ -877,8 +1054,9 @@ service cloud.firestore {
       // Tasks' meal plan: one document per planned slot, "<day>_<type>" ("2031-01-06_dinner"), so two
       // members planning at once never overwrite each other's choices.
       match /mealPlan/{slotId} {
-        allow read, delete: if isMember();
-        allow create, update: if isMember()
+        allow read: if isMember();
+        allow delete: if staff();
+        allow create, update: if staff()
           && request.resource.data.keys().hasOnly(['day', 'type', 'name', 'meal', 'by', 'updatedAt'])
           && request.resource.data.day is string
           && request.resource.data.day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
