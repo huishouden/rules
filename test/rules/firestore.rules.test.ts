@@ -322,6 +322,50 @@ describe('household contents', () => {
     await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/homeWarranties/w1')));
   });
 
+  describe('portal layout', () => {
+    const path = 'households/h1/settings/portal';
+    const layout = { order: ['tasks', 'home', 'pet', 'car', 'bills', 'spending', 'baby'], hidden: ['baby'], updatedAt: 1, by: ALICE };
+
+    it('lets members read and save the layout', async () => {
+      await assertSucceeds(setDoc(doc(as(ALICE), path), layout));
+      await assertSucceeds(getDoc(doc(as(BOB), path)));
+      await assertSucceeds(setDoc(doc(as(BOB), path), { order: [], hidden: [], updatedAt: 2, by: BOB }));
+    });
+
+    it('keeps it from non-members and signed-out visitors', async () => {
+      await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), path), layout));
+      await assertFails(getDoc(doc(as(MALLORY), path)));
+      await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), path)));
+      await assertFails(setDoc(doc(as(MALLORY), path), layout));
+    });
+
+    it('allows only the portal document and never deletes it', async () => {
+      await assertFails(setDoc(doc(as(ALICE), 'households/h1/settings/other'), layout));
+      await assertSucceeds(setDoc(doc(as(ALICE), path), layout));
+      await assertFails(deleteDoc(doc(as(ALICE), path)));
+    });
+
+    it('checks the fields', async () => {
+      const fails = (data: object) => assertFails(setDoc(doc(as(ALICE), path), data));
+      const thirty = Array.from({ length: 30 }, (_, i) => `app-${i}`);
+      await assertSucceeds(setDoc(doc(as(ALICE), path), { ...layout, order: thirty, hidden: thirty }));
+      await assertSucceeds(setDoc(doc(as(ALICE), path), { ...layout, order: ['x'.repeat(40)] }));
+      await fails({ ...layout, colour: 'green' });
+      await fails({ order: layout.order, updatedAt: 1, by: ALICE });
+      await fails({ ...layout, order: [...thirty, 'one-more'] });
+      await fails({ ...layout, hidden: [...thirty, 'one-more'] });
+      await fails({ ...layout, order: ['x'.repeat(41)] });
+      await fails({ ...layout, hidden: ['tasks', ''] });
+      await fails({ ...layout, hidden: ['tasks/home'] });
+      await fails({ ...layout, order: [...thirty.slice(0, 29), 7] });
+      await fails({ ...layout, hidden: ['tasks', { repo: 'home' }] });
+      await fails({ ...layout, order: 'tasks,home' });
+      await fails({ ...layout, updatedAt: '2026-10-02' });
+      await fails({ ...layout, updatedAt: 1.5 });
+      await fails({ ...layout, by: 42 });
+    });
+  });
+
   describe('reminders', () => {
     const reminder = {
       app: 'pet',
