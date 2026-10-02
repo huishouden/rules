@@ -56,4 +56,7 @@ it doesn't name is a member, except the household's creator (first in `members`)
   record without the flag is private to them until it is written with `private: false`, so their
   queries ask for `private == false`; the apps write the flag on every save.
 - Reminders and agenda items are kept in step by whichever device opens an app, so helpers and kids
-  may write the open ones, but never Spending's or Bills'.
+  may write the open ones, signed by them, linking only into the apps and never re-arming a sent
+  reminder. Spending's and Bills' are always private, whoever writes them.
+- Kids never tick off a medicine reminder (flea and tick, heartworm, deworming, medication): that
+  records it given. Ticking a step on someone else's item keeps the number of steps.

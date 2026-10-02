@@ -176,7 +176,10 @@ service cloud.firestore {
           && request.resource.data.name.size() <= 200
           && request.resource.data.listId is string
           && request.resource.data.completed is bool
-          && (!('subtasks' in request.resource.data) || request.resource.data.subtasks.size() <= 50)
+          && (!('subtasks' in request.resource.data) || (request.resource.data.subtasks is list && request.resource.data.subtasks.size() <= 50))
+          // Ticking a step off someone else's item keeps its steps (Tasks rewrites the whole list).
+          && (staff() || request.method == 'create' || addedByMe()
+            || request.resource.data.get('subtasks', []).size() == resource.data.get('subtasks', []).size())
           // Shown as a link on every member's list: a web address or nothing.
           && (!('link' in request.resource.data) || request.resource.data.link == ''
             || (request.resource.data.link is string && request.resource.data.link.size() <= 2000
@@ -668,6 +671,9 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(['petId', 'kind', 'title', 'every', 'unit', 'due', 'lastDoneAt', 'notes', 'createdAt', 'updatedAt', 'by'])
           && petStr(request.resource.data, 'petId', 1, 128)
           && request.resource.data.kind in ['flea-tick', 'heartworm', 'vaccine', 'deworming', 'medication', 'other']
+          // Ticking off a medicine reminder records it given: never by a kid.
+          && (role() != 'kid' || request.method == 'create' || addedByMe()
+            || !(resource.data.kind in ['flea-tick', 'heartworm', 'deworming', 'medication']))
           && petStr(request.resource.data, 'title', 1, 80)
           && ('every' in request.resource.data) == ('unit' in request.resource.data)
           && (!('every' in request.resource.data) || (request.resource.data.every is int
@@ -889,9 +895,15 @@ service cloud.firestore {
       // Reminders and agenda items are worked out from each app's data on whichever device opens
       // it, the shared tablet included, so helpers and kids keep the open ones in step too: any
       // that aren't private and aren't Spending's or Bills'.
+      // Spending's and Bills' items are always private. A helper's items link only into the apps
+      // (the portal opens the link, the sender pushes it) and never re-arm a sent reminder.
       function openDerived() {
-        return staff()
-          || (helping() && !moneyApp(request.resource.data.app) && privateFlag());
+        return (staff() && (!moneyApp(request.resource.data.app) || request.resource.data.get('private', true) == true))
+          || (helping() && !moneyApp(request.resource.data.app) && privateFlag()
+            && (request.method == 'create' || !moneyApp(resource.data.app))
+            && request.resource.data.by == myEmail()
+            && request.resource.data.url.matches('https://huishouden(-[a-z]+)*[.]web[.]app/.*')
+            && (request.method == 'create' || resource.data.get('sent', false) == false || request.resource.data.get('sent', false) == true));
       }
 
       function openDerivedRemoval() {

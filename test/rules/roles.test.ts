@@ -156,6 +156,8 @@ interface Shared {
   tick?: Record<string, unknown>;
   /** Who may add one (default: everyone in the household). */
   adders?: Who[];
+  /** Who may tick off someone else's (default: everyone in the household). */
+  tickers?: Who[];
 }
 
 const SHARED: Shared[] = [
@@ -200,6 +202,8 @@ const SHARED: Shared[] = [
     doc: (by) => ({ petId: 'p1', kind: 'flea-tick', title: 'Flea and tick', every: 1, unit: 'month', due: '2031-05-12', createdAt: 1, by }),
     edit: { title: 'Fleas' },
     tick: { lastDoneAt: 5, due: '2031-06-12', updatedAt: 5 },
+    // Ticking off a medicine reminder records it given: never a kid.
+    tickers: ['admin', 'member', 'helper'],
   },
   { col: 'petWeights', doc: (by) => ({ petId: 'p1', at: 1700000000000, value: 26.1, unit: 'lb', by, createdAt: 1 }), edit: { value: 27 } },
   { col: 'petRecords', doc: (by) => ({ petId: 'p1', title: 'Allergy test', date: '2030-11-14', createdAt: 1, by }), edit: { title: 'Allergies' } },
@@ -257,8 +261,9 @@ describe('everyday records, by role', () => {
         });
 
         if (s.tick) {
-          it(`${who}: ${inside ? 'ticks off' : 'can’t tick off'} someone else’s`, async () => {
-            await expect(inside, updateDoc(doc(as(me), theirs), s.tick!));
+          const ticks = (s.tickers ?? IN_HOUSEHOLD).includes(who);
+          it(`${who}: ${ticks ? 'ticks off' : 'can’t tick off'} someone else’s`, async () => {
+            await expect(ticks, updateDoc(doc(as(me), theirs), s.tick!));
           });
         }
       }
@@ -502,6 +507,23 @@ describe('agenda and reminders', () => {
         await assertSucceeds(deleteDoc(doc(as(HELEN), `households/h1/${col}/open`)));
       });
 
+      it('keeps Spending’s and Bills’ items private, whoever writes them', async () => {
+        await assertFails(setDoc(doc(as(BOB), `households/h1/${col}/b2`), make(BOB, { app: 'bills', private: false })));
+        await assertFails(setDoc(doc(as(ALICE), `households/h1/${col}/b3`), make(ALICE, { app: 'spending', private: false })));
+        await assertSucceeds(setDoc(doc(as(ALICE), `households/h1/${col}/b4`), (({ private: _p, ...rest }) => rest)(make(ALICE, { app: 'bills' }))));
+        // An open one written some other way can't be taken over by a helper relabelling it.
+        await seed(`households/h1/${col}/openbill`, make(ALICE, { app: 'bills', private: false }));
+        await assertFails(setDoc(doc(as(HELEN), `households/h1/${col}/openbill`), make(HELEN)));
+      });
+
+      it('keeps a helper’s items signed by them and linking into the apps', async () => {
+        await assertFails(setDoc(doc(as(HELEN), `households/h1/${col}/n5`), make(ALICE)));
+        await assertFails(setDoc(doc(as(HELEN), `households/h1/${col}/n6`), make(HELEN, { url: 'https://evil.example.com/login' })));
+        await assertFails(setDoc(doc(as(HELEN), `households/h1/${col}/open`), make(HELEN, { url: 'https://huishouden-pet.web.app.evil.example.com/' })));
+        await assertSucceeds(setDoc(doc(as(HELEN), `households/h1/${col}/n7`), make(HELEN, { url: 'https://huishouden-staging-pet.web.app/pets/p1' })));
+        await assertSucceeds(setDoc(doc(as(ALICE), `households/h1/${col}/n8`), make(ALICE, { url: 'https://example.com/' })));
+      });
+
       it('never lets helpers write or remove private items, or Spending’s or Bills’', async () => {
         await assertFails(setDoc(doc(as(HELEN), `households/h1/${col}/secret`), make(HELEN)));
         await assertFails(setDoc(doc(as(HELEN), `households/h1/${col}/legacy`), make(HELEN)));
@@ -514,6 +536,38 @@ describe('agenda and reminders', () => {
       });
     });
   }
+});
+
+describe('reminders already sent', () => {
+  it('can’t be re-armed by a helper; admins and members may resend', async () => {
+    const sent = { app: 'pet', title: 'Dose', body: '', at: 1, url: 'https://huishouden-pet.web.app/', recipients: 'all', private: false, sent: true, sentAt: 2, createdAt: 1, by: ALICE };
+    await seed('households/h1/reminders/r1', sent);
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/r1'), { ...sent, title: 'Dose now', sent: false, by: HELEN }));
+    await assertSucceeds(setDoc(doc(as(HELEN), 'households/h1/reminders/r1'), { ...sent, by: HELEN }));
+    await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/reminders/r1'), { ...sent, sent: false, by: BOB }));
+  });
+});
+
+describe('ticking off', () => {
+  it('lets a kid tick off a reminder that isn’t medicine', async () => {
+    const reminder = { petId: 'p1', kind: 'vaccine', title: 'Rabies', due: '2031-05-12', createdAt: 1, by: ALICE };
+    await seed('households/h1/petReminders/r1', reminder);
+    await assertSucceeds(updateDoc(doc(as(KIM), 'households/h1/petReminders/r1'), { lastDoneAt: 5, due: '2032-05-12', updatedAt: 5 }));
+    await seed('households/h1/petReminders/r2', { ...reminder, kind: 'heartworm' });
+    await assertFails(updateDoc(doc(as(KIM), 'households/h1/petReminders/r2'), { lastDoneAt: 5 }));
+    await assertSucceeds(updateDoc(doc(as(HELEN), 'households/h1/petReminders/r2'), { lastDoneAt: 5 }));
+  });
+
+  it('lets a helper tick a step on someone else’s item but not add, drop or empty steps', async () => {
+    const steps = [{ id: 's1', text: 'Pack', done: false }, { id: 's2', text: 'Go', done: false }];
+    await seed('households/h1/items/c1', { name: 'Trip', listId: 'todo', completed: false, subtasks: steps, by: ALICE });
+    const db = as(HELEN);
+    await assertSucceeds(updateDoc(doc(db, 'households/h1/items/c1'), { subtasks: [{ ...steps[0], done: true }, steps[1]], updatedAt: 5 }));
+    await assertFails(updateDoc(doc(db, 'households/h1/items/c1'), { subtasks: [] }));
+    await assertFails(updateDoc(doc(db, 'households/h1/items/c1'), { subtasks: [...steps, { id: 's3', text: 'x', done: false }] }));
+    await assertFails(updateDoc(doc(db, 'households/h1/items/c1'), { subtasks: 'xx' }));
+    await assertSucceeds(updateDoc(doc(as(BOB), 'households/h1/items/c1'), { subtasks: [] }));
+  });
 });
 
 describe('Tasks lists, staples and aisles', () => {
