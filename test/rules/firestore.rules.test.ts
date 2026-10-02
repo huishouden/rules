@@ -480,6 +480,18 @@ describe('household contents', () => {
       await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p3'), { ...pet, createdAt: 'yesterday' }));
     });
 
+    it("checks a pet's target weight: a positive number under 1000, with an optional short note", async () => {
+      const db = as(ALICE);
+      await assertSucceeds(setDoc(doc(db, 'households/h1/petProfiles/p4'), { ...pet, targetWeight: 24.5, targetNote: "Vet's goal" }));
+      await assertSucceeds(setDoc(doc(db, 'households/h1/petProfiles/p4'), { ...pet, targetWeight: 12 }));
+      await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p5'), { ...pet, targetWeight: 0 }));
+      await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p5'), { ...pet, targetWeight: -3 }));
+      await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p5'), { ...pet, targetWeight: 1000 }));
+      await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p5'), { ...pet, targetWeight: '24 lb' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p5'), { ...pet, targetWeight: 24, targetNote: 'x'.repeat(201) }));
+      await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p5'), { ...pet, targetNote: 42 }));
+    });
+
     it('checks reminders: a schedule needs both every and unit, within bounds', async () => {
       const db = as(ALICE);
       const { every: _every, unit: _unit, ...once } = reminder;

@@ -509,12 +509,15 @@ service cloud.firestore {
       match /petProfiles/{petId} {
         allow read, delete: if isMember();
         allow create, update: if isMember()
-          && request.resource.data.keys().hasOnly(['name', 'species', 'breed', 'birthDate', 'weightUnit', 'notes', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['name', 'species', 'breed', 'birthDate', 'weightUnit', 'targetWeight', 'targetNote', 'notes', 'createdAt', 'updatedAt', 'by'])
           && petStr(request.resource.data, 'name', 1, 60)
           && request.resource.data.species in ['dog', 'cat', 'rabbit', 'bird', 'fish', 'reptile', 'small pet', 'other']
           && request.resource.data.weightUnit in ['kg', 'lb']
           && petOptStr(request.resource.data, 'breed', 60)
           && (!('birthDate' in request.resource.data) || petYmd(request.resource.data, 'birthDate'))
+          && (!('targetWeight' in request.resource.data) || (request.resource.data.targetWeight is number
+            && request.resource.data.targetWeight > 0 && request.resource.data.targetWeight < 1000))
+          && petOptStr(request.resource.data, 'targetNote', 200)
           && petOptStr(request.resource.data, 'notes', 1000)
           && petAuthored(request.resource.data);
       }
