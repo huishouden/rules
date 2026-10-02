@@ -825,6 +825,22 @@ service cloud.firestore {
           && request.resource.data.meals is list
           && request.resource.data.meals.size() <= 30;
       }
+
+      // Tasks' meal plan: one document per planned slot, "<day>_<type>" ("2031-01-06_dinner"), so two
+      // members planning at once never overwrite each other's choices.
+      match /mealPlan/{slotId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['day', 'type', 'name', 'meal', 'by', 'updatedAt'])
+          && request.resource.data.day is string
+          && request.resource.data.day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+          && request.resource.data.type in ['breakfast', 'lunch', 'dinner']
+          && slotId == request.resource.data.day + '_' + request.resource.data.type
+          && hhStr(request.resource.data, 'name', 1, 120)
+          && request.resource.data.meal is map
+          && request.resource.data.updatedAt is int
+          && request.resource.data.by == myEmail();
+      }
     }
   }
 }
