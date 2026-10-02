@@ -155,6 +155,7 @@ describe('household contents', () => {
     await assertFails(getDoc(doc(as(MALLORY), 'households/h1/stores/s1/aisles/milk')));
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/stores/s1/aisles/eggs'), { ...aisle, aisle: '' }));
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/stores/s1/aisles/eggs'), { ...aisle, aisle: 'x'.repeat(25) }));
+  });
 
   it('lets members read spending transactions that no browser can write', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
