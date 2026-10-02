@@ -208,6 +208,67 @@ describe('household contents', () => {
     await assertFails(getDoc(doc(as(MALLORY), 'households/h1/babyAppointments/a1')));
   });
 
+  describe('Huishouden Car', () => {
+    const stamp = { createdAt: 1700000000000, by: 'alice@example.com' };
+    const car = { name: 'Family van', make: 'Example', model: 'Wagon', year: 2027, ...stamp };
+    const oil = { vehicleId: 'v1', name: 'Oil change', everyMonths: 6, everyDistance: 5000, lastDate: '2031-01-10', lastOdometer: 41200, ...stamp };
+    const reading = { vehicleId: 'v1', date: '2031-04-01', reading: 42180, ...stamp };
+    const registration = { vehicleId: 'v1', kind: 'registration', name: 'Registration', dueDate: '2031-04-27', everyMonths: 12, ...stamp };
+    const visit = { vehicleId: 'v1', date: '2031-01-10', odometer: 41200, what: 'Oil change', serviceItemIds: ['s1'], shopId: 'c1', costCents: 8999, ...stamp };
+    const appointment = { vehicleId: 'v1', title: 'Tire rotation', at: 1700000000000, shopId: 'c1', calendarLink: 'https://calendar.example.com/e1', ...stamp };
+
+    it('lets members keep cars, schedules, odometer readings, renewals, history and appointments', async () => {
+      const db = as(ALICE);
+      await assertSucceeds(setDoc(doc(db, 'households/h1/carVehicles/v1'), car));
+      await assertSucceeds(setDoc(doc(db, 'households/h1/carServiceItems/s1'), oil));
+      await assertSucceeds(setDoc(doc(db, 'households/h1/carOdometer/o1'), reading));
+      await assertSucceeds(setDoc(doc(db, 'households/h1/carRenewals/r1'), registration));
+      await assertSucceeds(setDoc(doc(db, 'households/h1/carRenewals/r2'), { kind: 'toll', name: 'Toll account', dueDate: '2031-09-01', ...stamp }));
+      await assertSucceeds(setDoc(doc(db, 'households/h1/carServiceLog/l1'), visit));
+      await assertSucceeds(setDoc(doc(db, 'households/h1/carAppointments/a1'), appointment));
+      await assertSucceeds(setDoc(doc(db, 'households/h1/carSettings/main'), { distanceUnit: 'km', updatedAt: 1, updatedBy: ALICE }));
+      for (const path of ['carVehicles/v1', 'carServiceItems/s1', 'carOdometer/o1', 'carRenewals/r1', 'carServiceLog/l1', 'carAppointments/a1', 'carSettings/main']) {
+        await assertSucceeds(getDoc(doc(as(BOB), `households/h1/${path}`)));
+        await assertFails(getDoc(doc(as(MALLORY), `households/h1/${path}`)));
+      }
+      await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/carServiceLog/l1')));
+    });
+
+    it('keeps non-members out of the car collections', async () => {
+      const db = as(MALLORY);
+      await assertFails(setDoc(doc(db, 'households/h1/carVehicles/v2'), car));
+      await assertFails(setDoc(doc(db, 'households/h1/carOdometer/o2'), reading));
+      await assertFails(setDoc(doc(db, 'households/h1/carSettings/main'), { distanceUnit: 'mi', updatedAt: 1, updatedBy: MALLORY }));
+      await assertFails(getDocs(collection(db, 'households/h1/carRenewals')));
+    });
+
+    it('accepts only the known car fields, types and sizes', async () => {
+      const db = as(ALICE);
+      const fails = async (path: string, data: Record<string, unknown>) => assertFails(setDoc(doc(db, `households/h1/${path}`), data));
+      await fails('carVehicles/v3', { ...car, vin: 'x' });
+      await fails('carVehicles/v3', { ...car, name: '' });
+      await fails('carVehicles/v3', { ...car, name: 'x'.repeat(61) });
+      await fails('carVehicles/v3', { ...car, year: 1850 });
+      await fails('carVehicles/v3', { ...car, year: '2027' });
+      await fails('carServiceItems/s2', { vehicleId: 'v1', name: 'Wipers', ...stamp });
+      await fails('carServiceItems/s2', { ...oil, everyMonths: 0 });
+      await fails('carServiceItems/s2', { ...oil, everyDistance: 2.5 });
+      await fails('carServiceItems/s2', { ...oil, lastDate: '10/01/2031' });
+      await fails('carOdometer/o3', { ...reading, reading: -1 });
+      await fails('carOdometer/o3', { ...reading, reading: 42180.5 });
+      await fails('carOdometer/o3', { ...reading, plate: 'x' });
+      await fails('carRenewals/r3', { ...registration, kind: 'parking' });
+      await fails('carRenewals/r3', { ...registration, dueDate: 'soon' });
+      await fails('carServiceLog/l2', { ...visit, costCents: 89.99 });
+      await fails('carServiceLog/l2', { ...visit, what: '' });
+      await fails('carServiceLog/l2', { ...visit, notes: 'x'.repeat(1001) });
+      await fails('carAppointments/a2', { ...appointment, calendarLink: 'javascript:alert(1)' });
+      await fails('carAppointments/a2', { ...appointment, at: '2031-05-01' });
+      await fails('carSettings/main', { distanceUnit: 'furlongs', updatedAt: 1, updatedBy: ALICE });
+      await fails('carSettings/other', { distanceUnit: 'mi', updatedAt: 1, updatedBy: ALICE });
+    });
+  });
+
   it('rejects items without a name', async () => {
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/items/i3'), { name: '', listId: 'groceries', completed: false }));
   });

@@ -127,6 +127,118 @@ service cloud.firestore {
           && request.resource.data.at is int;
       }
 
+      // Huishouden Car: the household's cars, their service schedules, odometer readings,
+      // renewals, service history and service appointments. Shops are shared contacts.
+      function carStr(d, k, max) {
+        return !(k in d) || (d[k] is string && d[k].size() <= max);
+      }
+      function carName(d, k, max) {
+        return d[k] is string && d[k].size() > 0 && d[k].size() <= max;
+      }
+      function carInt(d, k, lo, hi) {
+        return !(k in d) || (d[k] is int && d[k] >= lo && d[k] <= hi);
+      }
+      function carYmd(d, k) {
+        return d[k] is string && d[k].matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+      }
+      function carStamp(d) {
+        return d.createdAt is int && d.by is string && d.by.size() <= 120 && carInt(d, 'updatedAt', 0, 9007199254740991);
+      }
+
+      match /carVehicles/{vehicleId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['name', 'make', 'model', 'year', 'notes', 'createdAt', 'updatedAt', 'by'])
+          && carName(request.resource.data, 'name', 60)
+          && carStr(request.resource.data, 'make', 40)
+          && carStr(request.resource.data, 'model', 40)
+          && carInt(request.resource.data, 'year', 1900, 2100)
+          && carStr(request.resource.data, 'notes', 500)
+          && carStamp(request.resource.data);
+      }
+
+      match /carServiceItems/{itemId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['vehicleId', 'name', 'everyMonths', 'everyDistance', 'lastDate', 'lastOdometer', 'notes', 'createdAt', 'updatedAt', 'by'])
+          && carName(request.resource.data, 'vehicleId', 128)
+          && carName(request.resource.data, 'name', 80)
+          && ('everyMonths' in request.resource.data || 'everyDistance' in request.resource.data)
+          && carInt(request.resource.data, 'everyMonths', 1, 240)
+          && carInt(request.resource.data, 'everyDistance', 1, 1000000)
+          && (!('lastDate' in request.resource.data) || carYmd(request.resource.data, 'lastDate'))
+          && carInt(request.resource.data, 'lastOdometer', 0, 9999999)
+          && carStr(request.resource.data, 'notes', 500)
+          && carStamp(request.resource.data);
+      }
+
+      match /carOdometer/{readingId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['vehicleId', 'date', 'reading', 'note', 'createdAt', 'updatedAt', 'by'])
+          && carName(request.resource.data, 'vehicleId', 128)
+          && carYmd(request.resource.data, 'date')
+          && request.resource.data.reading is int
+          && carInt(request.resource.data, 'reading', 0, 9999999)
+          && carStr(request.resource.data, 'note', 200)
+          && carStamp(request.resource.data);
+      }
+
+      match /carRenewals/{renewalId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['vehicleId', 'kind', 'name', 'dueDate', 'everyMonths', 'notes', 'createdAt', 'updatedAt', 'by'])
+          && carStr(request.resource.data, 'vehicleId', 128)
+          && request.resource.data.kind in ['registration', 'insurance', 'inspection', 'toll', 'other']
+          && carName(request.resource.data, 'name', 80)
+          && carYmd(request.resource.data, 'dueDate')
+          && carInt(request.resource.data, 'everyMonths', 1, 120)
+          && carStr(request.resource.data, 'notes', 500)
+          && carStamp(request.resource.data);
+      }
+
+      match /carServiceLog/{entryId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['vehicleId', 'date', 'odometer', 'what', 'serviceItemIds', 'shopId', 'costCents', 'notes', 'createdAt', 'updatedAt', 'by'])
+          && carName(request.resource.data, 'vehicleId', 128)
+          && carYmd(request.resource.data, 'date')
+          && carInt(request.resource.data, 'odometer', 0, 9999999)
+          && carName(request.resource.data, 'what', 120)
+          && (!('serviceItemIds' in request.resource.data) || (request.resource.data.serviceItemIds is list && request.resource.data.serviceItemIds.size() <= 20))
+          && carStr(request.resource.data, 'shopId', 128)
+          && carInt(request.resource.data, 'costCents', 0, 100000000)
+          && carStr(request.resource.data, 'notes', 1000)
+          && carStamp(request.resource.data);
+      }
+
+      match /carAppointments/{appointmentId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['vehicleId', 'title', 'at', 'location', 'notes', 'shopId', 'calendarEventId', 'calendarLink', 'createdAt', 'updatedAt', 'by'])
+          && carStr(request.resource.data, 'vehicleId', 128)
+          && carName(request.resource.data, 'title', 120)
+          && request.resource.data.at is int
+          && carStr(request.resource.data, 'location', 200)
+          && carStr(request.resource.data, 'notes', 500)
+          && carStr(request.resource.data, 'shopId', 128)
+          && carStr(request.resource.data, 'calendarEventId', 1024)
+          && (!('calendarLink' in request.resource.data) || (request.resource.data.calendarLink is string
+            && request.resource.data.calendarLink.matches('https://.*') && request.resource.data.calendarLink.size() <= 2000))
+          && carStamp(request.resource.data);
+      }
+
+      // One document, `main`: the unit the household's odometers read in.
+      match /carSettings/{docId} {
+        allow read: if isMember();
+        allow write: if isMember()
+          && docId == 'main'
+          && request.resource.data.keys().hasOnly(['distanceUnit', 'updatedAt', 'updatedBy'])
+          && request.resource.data.distanceUnit in ['mi', 'km']
+          && request.resource.data.updatedAt is int
+          && request.resource.data.updatedBy is string;
+      }
+
       // Each member's own name and photo (@huishouden/pwa-kit/household saveMyProfile), keyed by
       // their email; only that member writes it.
       match /profiles/{email} {
