@@ -86,6 +86,12 @@ service cloud.firestore {
         }
       }
 
+      // Spending mirrors its data here from a server (which bypasses these rules); browsers only read it.
+      match /spendingTransactions/{txId} {
+        allow read: if isMember();
+        allow write: if false;
+      }
+
       match /favorites/{favoriteId} {
         allow read, write: if isMember();
       }

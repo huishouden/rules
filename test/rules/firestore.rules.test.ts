@@ -155,6 +155,15 @@ describe('household contents', () => {
     await assertFails(getDoc(doc(as(MALLORY), 'households/h1/stores/s1/aisles/milk')));
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/stores/s1/aisles/eggs'), { ...aisle, aisle: '' }));
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/stores/s1/aisles/eggs'), { ...aisle, aisle: 'x'.repeat(25) }));
+
+  it('lets members read spending transactions that no browser can write', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'households/h1/spendingTransactions/t1'), { amount: 12.5, merchant: 'Publix' });
+    });
+    await assertSucceeds(getDoc(doc(as(ALICE), 'households/h1/spendingTransactions/t1')));
+    await assertFails(getDoc(doc(as(MALLORY), 'households/h1/spendingTransactions/t1')));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/spendingTransactions/t2'), { amount: 1 }));
+    await assertFails(deleteDoc(doc(as(ALICE), 'households/h1/spendingTransactions/t1')));
   });
 
   it('rejects items without a name', async () => {
