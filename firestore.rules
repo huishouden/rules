@@ -92,6 +92,41 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Huishouden Baby: the household's shared baby log, checklists and appointments.
+      match /babyProfile/{docId} {
+        allow read: if isMember();
+        allow write: if isMember()
+          && docId == 'main'
+          && request.resource.data.keys().hasOnly(['name', 'dueDate', 'birthDate', 'updatedAt', 'updatedBy'])
+          && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 60));
+      }
+
+      match /babyEvents/{eventId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['kind', 'at', 'endAt', 'side', 'method', 'amountMl', 'diaper', 'note', 'by', 'createdAt', 'updatedAt'])
+          && request.resource.data.kind in ['feed', 'sleep', 'diaper', 'pump']
+          && request.resource.data.at is int
+          && (!('note' in request.resource.data) || (request.resource.data.note is string && request.resource.data.note.size() <= 500));
+      }
+
+      match /babyChecklists/{itemId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 200;
+      }
+
+      match /babyAppointments/{appointmentId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 120
+          && request.resource.data.at is int;
+      }
+
       match /favorites/{favoriteId} {
         allow read, write: if isMember();
       }

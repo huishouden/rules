@@ -167,6 +167,26 @@ describe('household contents', () => {
     await assertFails(deleteDoc(doc(as(ALICE), 'households/h1/spendingTransactions/t1')));
   });
 
+  it('lets members keep the baby log, and nobody else', async () => {
+    const feed = { kind: 'feed', at: 1700000000000, side: 'left', by: 'alice@example.com', createdAt: 1700000000000 };
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/babyEvents/e1'), feed));
+    await assertSucceeds(getDoc(doc(as(BOB), 'households/h1/babyEvents/e1')));
+    await assertFails(getDoc(doc(as(MALLORY), 'households/h1/babyEvents/e1')));
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h1/babyEvents/e2'), feed));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/babyEvents/e3'), { ...feed, kind: 'party' }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/babyEvents/e4'), { ...feed, extra: true }));
+    await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/babyEvents/e1')));
+  });
+
+  it('lets members edit the baby profile, checklists and appointments', async () => {
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/babyProfile/main'), { dueDate: '2031-03-01', updatedAt: 1 }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/babyProfile/other'), { dueDate: '2031-03-01' }));
+    await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/babyChecklists/c1'), { list: 'hospital-bag', text: 'Charger', done: false }));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/babyChecklists/c2'), { list: 'hospital-bag', text: '' }));
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/babyAppointments/a1'), { title: 'Checkup', at: 1700000000000 }));
+    await assertFails(getDoc(doc(as(MALLORY), 'households/h1/babyAppointments/a1')));
+  });
+
   it('rejects items without a name', async () => {
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/items/i3'), { name: '', listId: 'groceries', completed: false }));
   });
