@@ -17,9 +17,9 @@ let env: RulesTestEnvironment;
 
 beforeAll(async () => {
   env = await initializeTestEnvironment({
-    projectId: 'demo-hearthlist',
+    projectId: 'demo-huishouden-tasks',
     firestore: {
-      rules: readFileSync(resolve(__dirname, '../../../firestore.rules'), 'utf8'),
+      rules: readFileSync(resolve(__dirname, '../../firestore.rules'), 'utf8'),
       host: '127.0.0.1',
       port: 8080,
     },
@@ -138,7 +138,7 @@ describe('household contents', () => {
   });
 
   it('lets members manage store layouts, validates them, and hides them from others', async () => {
-    const layout = { name: 'Publix', categoryOrder: ['Frozen Foods'], aisleLabels: {}, location: null, createdAt: 1 };
+    const layout = { name: 'Corner Grocer', categoryOrder: ['Frozen Foods'], aisleLabels: {}, location: null, createdAt: 1 };
     await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/stores/s1'), layout));
     await assertSucceeds(getDoc(doc(as(BOB), 'households/h1/stores/s1')));
     await assertFails(getDoc(doc(as(MALLORY), 'households/h1/stores/s1')));
@@ -147,7 +147,7 @@ describe('household contents', () => {
 
   it('lets members record learned aisles, within limits', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'households/h1/stores/s1'), { name: 'Publix', categoryOrder: [] });
+      await setDoc(doc(ctx.firestore(), 'households/h1/stores/s1'), { name: 'Corner Grocer', categoryOrder: [] });
     });
     const aisle = { aisle: '12', name: 'Milk', updatedAt: 1, updatedBy: 'Bob' };
     await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/stores/s1/aisles/milk'), aisle));
@@ -159,7 +159,7 @@ describe('household contents', () => {
 
   it('lets members read spending transactions that no browser can write', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'households/h1/spendingTransactions/t1'), { amount: 12.5, merchant: 'Publix' });
+      await setDoc(doc(ctx.firestore(), 'households/h1/spendingTransactions/t1'), { amount: 12.5, merchant: 'Corner Grocer' });
     });
     await assertSucceeds(getDoc(doc(as(ALICE), 'households/h1/spendingTransactions/t1')));
     await assertFails(getDoc(doc(as(MALLORY), 'households/h1/spendingTransactions/t1')));
