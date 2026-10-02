@@ -42,7 +42,7 @@ it doesn't name is a member, except the household's creator (first in `members`)
 | Rename the household; settings, food preferences, portal layout, lists, cars, meal plan, medicine courses | yes | yes | | |
 | Read lists, chores, pets, baby, home, car, contacts and appointments | yes | yes | yes | yes |
 | Add items and log feeds, sleep, diapers, meals, readings and visits | yes | yes | yes | yes |
-| Tick off anyone's item, chore, job, reminder or service | yes | yes | yes | yes |
+| Tick off anyone's item, chore, job, reminder or service; end anyone's baby sleep | yes | yes | yes | yes |
 | Change or delete what someone else added | yes | yes | own only | own only |
 | Give pet medicine (dose logs) | yes | yes | if the course allows them | |
 | Read or write Spending and Bills | yes | yes | | |
