@@ -634,9 +634,10 @@ service cloud.firestore {
 
       function billAutopay(v) {
         return v == null
-          || (v is map && v.keys().hasOnly(['enrolled', 'nextDraft'])
+          || (v is map && v.keys().hasOnly(['enrolled', 'nextDraft', 'via'])
             && v.enrolled is bool
-            && (!('nextDraft' in v) || isYmd(v.nextDraft)));
+            && (!('nextDraft' in v) || isYmd(v.nextDraft))
+            && (!('via' in v) || v.via in ['card']));
       }
 
       match /billSources/{sourceId} {
@@ -677,7 +678,7 @@ service cloud.firestore {
             && request.resource.data.period.keys().hasOnly(['start', 'end'])
             && isYmd(request.resource.data.period.start) && isYmd(request.resource.data.period.end)))
           && optLink(request.resource.data, 'payUrl')
-          && (!('repeat' in request.resource.data) || request.resource.data.repeat in ['monthly', 'quarterly', 'yearly'])
+          && (!('repeat' in request.resource.data) || request.resource.data.repeat in ['weekly', 'monthly', 'quarterly', 'yearly'])
           && optString(request.resource.data, 'emailId', 200)
           && (!('paidAt' in request.resource.data) || request.resource.data.paidAt is int)
           && optString(request.resource.data, 'paidBy', 200)
@@ -687,6 +688,21 @@ service cloud.firestore {
           && request.resource.data.createdBy is string
           && request.resource.data.updatedAt is int
           && (!('observedAt' in request.resource.data) || request.resource.data.observedAt is int);
+      }
+
+      // A regular charge Bills found in the household's card spending, once a member has answered
+      // it: added as a bill, or "Not a bill". Keyed by the merchant key, so it is never offered again.
+      match /billSuggestions/{key} {
+        allow read, delete: if staff();
+        allow create, update: if staff()
+          && request.resource.data.keys().hasOnly(['status', 'name', 'billId', 'by', 'at'])
+          && request.resource.data.status in ['added', 'dismissed']
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 80
+          && optString(request.resource.data, 'billId', 100)
+          && request.resource.data.by == myEmail()
+          && request.resource.data.at is int;
       }
 
       // One per member, keyed by their email: only they record their own check.

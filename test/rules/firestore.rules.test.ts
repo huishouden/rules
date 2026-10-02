@@ -882,6 +882,22 @@ describe('Huishouden Bills', () => {
   };
   const check = { checkedAt: 1, by: BOB, sources: 1, emails: 2, bills: 1, errors: [] };
 
+  it('keeps a member’s answer to a suggested bill, signed by them', async () => {
+    const answer = { status: 'dismissed', name: 'Starbucks', by: BOB, at: 1 };
+    const path = 'households/h1/billSuggestions/starbucks';
+    await assertSucceeds(setDoc(doc(as(BOB), path), answer));
+    await assertSucceeds(getDoc(doc(as(ALICE), path)));
+    await assertFails(getDoc(doc(as(MALLORY), path)));
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h1/billSuggestions/x'), { ...answer, by: MALLORY }));
+    await assertFails(setDoc(doc(as(ALICE), path), answer));
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/billSuggestions/netflix'), { status: 'added', name: 'Netflix', billId: 'abc', by: ALICE, at: 2 }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/billSuggestions/a'), { ...answer, by: ALICE, status: 'maybe' }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/billSuggestions/b'), { ...answer, by: ALICE, name: '' }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/billSuggestions/c'), { ...answer, by: ALICE, amount: 5 }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/billSuggestions/d'), { ...answer, by: ALICE, at: 'now' }));
+    await assertSucceeds(deleteDoc(doc(as(ALICE), path)));
+  });
+
   it('lets members keep bill sources with a way to match emails, and nobody else', async () => {
     await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/billSources/power'), source));
     await assertSucceeds(getDoc(doc(as(BOB), 'households/h1/billSources/power')));
@@ -918,6 +934,9 @@ describe('Huishouden Bills', () => {
     await assertFails(at('b7', { ...bill, schema: 'bill/v2' }));
     await assertFails(at('b8', { ...bill, period: { start: '2031-04-01' , end: 'soon' } }));
     await assertSucceeds(at('b9', { ...bill, amountDue: { amount: '-15.00', currency: 'USD' }, status: 'credit' }));
+    await assertSucceeds(at('b10', { ...bill, source: 'manual', repeat: 'weekly', autopay: { enrolled: true, via: 'card' } }));
+    await assertFails(at('b11', { ...bill, autopay: { enrolled: true, via: 'cash' } }));
+    await assertFails(at('b12', { ...bill, repeat: 'daily' }));
   });
 
   it("lets each member record only their own email check, readable by members", async () => {
