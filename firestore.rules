@@ -733,6 +733,28 @@ service cloud.firestore {
           && request.resource.data.createdAt is int;
       }
 
+      // The portal's tile layout for the household (huishouden/portal), one document, `portal`:
+      // app repo names in the household's order, and the ones it hid. Rules have no loops, so a
+      // list is checked as one string, joined with '/' (which no entry may contain); splitting it
+      // back must give the same list, which fails for anything that isn't a string.
+      function hhAppNames(l) {
+        let joined = l.join('/');
+        return l is list && l.size() <= 30
+          && (l.size() == 0 || (joined.matches('[^/]{1,40}(/[^/]{1,40})*') && joined.split('/') == l));
+      }
+
+      match /settings/{docId} {
+        allow read: if isMember();
+        allow delete: if false;
+        allow create, update: if isMember()
+          && docId == 'portal'
+          && request.resource.data.keys().hasOnly(['order', 'hidden', 'updatedAt', 'by'])
+          && hhAppNames(request.resource.data.order)
+          && hhAppNames(request.resource.data.hidden)
+          && request.resource.data.updatedAt is int
+          && hhStr(request.resource.data, 'by', 0, 200);
+      }
+
       match /favorites/{favoriteId} {
         allow read, write: if isMember();
       }
