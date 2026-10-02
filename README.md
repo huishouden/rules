@@ -18,7 +18,9 @@ and indexes (keyless, via the suite's deploy identity) only after the tests pass
 Once the tests pass, every same-repo pull request also deploys its rules to the staging project
 (`huishouden-staging`, invented data only), so an app's PR can be tried on staging against rules
 that haven't merged yet; `main` deploys to staging too, so staging returns to the merged rules.
-Staging carries whichever rules were deployed last. See pwa-kit STANDARD.md "Staging".
+Staging carries whichever rules were deployed last. The staging deploy runs only once the repo has
+the `STAGING_GCP_*` variables, which pwa-kit's `bootstrap.sh --staging` sets. See pwa-kit
+STANDARD.md "Staging".
 
 ```sh
 bun install
