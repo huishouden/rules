@@ -412,6 +412,170 @@ service cloud.firestore {
         allow delete: if isMember() && email == myEmail();
       }
 
+      // Huishouden Pet: pets, care reminders and the doses given, appointments, weights, records, the
+      // daily feeding board and medicine courses.
+      // Field lists match FIELDS in huishouden/pet src/lib/model.ts; keep them in step.
+      function petStr(d, k, min, max) {
+        return d[k] is string && d[k].size() >= min && d[k].size() <= max;
+      }
+      function petOptStr(d, k, max) {
+        return !(k in d) || petStr(d, k, 0, max);
+      }
+      function petOptInt(d, k) {
+        return !(k in d) || d[k] is int;
+      }
+      function petYmd(d, k) {
+        return d[k] is string && d[k].matches('[0-9]{4}-[0-9]{2}-[0-9]{2}');
+      }
+      function petAuthored(d) {
+        return d.createdAt is int && petOptInt(d, 'updatedAt') && petStr(d, 'by', 3, 254);
+      }
+
+      match /petProfiles/{petId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['name', 'species', 'breed', 'birthDate', 'weightUnit', 'notes', 'createdAt', 'updatedAt', 'by'])
+          && petStr(request.resource.data, 'name', 1, 60)
+          && request.resource.data.species in ['dog', 'cat', 'rabbit', 'bird', 'fish', 'reptile', 'small pet', 'other']
+          && request.resource.data.weightUnit in ['kg', 'lb']
+          && petOptStr(request.resource.data, 'breed', 60)
+          && (!('birthDate' in request.resource.data) || petYmd(request.resource.data, 'birthDate'))
+          && petOptStr(request.resource.data, 'notes', 1000)
+          && petAuthored(request.resource.data);
+      }
+
+      match /petReminders/{reminderId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['petId', 'kind', 'title', 'every', 'unit', 'due', 'lastDoneAt', 'notes', 'createdAt', 'updatedAt', 'by'])
+          && petStr(request.resource.data, 'petId', 1, 128)
+          && request.resource.data.kind in ['flea-tick', 'heartworm', 'vaccine', 'deworming', 'medication', 'other']
+          && petStr(request.resource.data, 'title', 1, 80)
+          && ('every' in request.resource.data) == ('unit' in request.resource.data)
+          && (!('every' in request.resource.data) || (request.resource.data.every is int
+            && request.resource.data.every >= 1 && request.resource.data.every <= 365
+            && request.resource.data.unit in ['day', 'week', 'month', 'year']))
+          && petYmd(request.resource.data, 'due')
+          && petOptInt(request.resource.data, 'lastDoneAt')
+          && petOptStr(request.resource.data, 'notes', 500)
+          && petAuthored(request.resource.data);
+      }
+
+      match /petDoses/{doseId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['petId', 'reminderId', 'title', 'at', 'by', 'createdAt'])
+          && petStr(request.resource.data, 'petId', 1, 128)
+          && petStr(request.resource.data, 'reminderId', 1, 128)
+          && petStr(request.resource.data, 'title', 1, 80)
+          && request.resource.data.at is int
+          && petAuthored(request.resource.data);
+      }
+
+      match /petAppointments/{appointmentId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['petIds', 'kind', 'title', 'at', 'location', 'notes', 'contactId', 'calendarEventId', 'calendarLink', 'createdAt', 'by'])
+          && request.resource.data.petIds is list
+          && request.resource.data.petIds.size() <= 10
+          && request.resource.data.kind in ['vet', 'grooming', 'boarding', 'other']
+          && petStr(request.resource.data, 'title', 1, 120)
+          && request.resource.data.at is int
+          && petOptStr(request.resource.data, 'location', 200)
+          && petOptStr(request.resource.data, 'notes', 500)
+          && petOptStr(request.resource.data, 'contactId', 128)
+          && petOptStr(request.resource.data, 'calendarEventId', 1024)
+          && (!('calendarLink' in request.resource.data) || (petStr(request.resource.data, 'calendarLink', 9, 2000)
+            && request.resource.data.calendarLink.matches('https://.*')))
+          && petAuthored(request.resource.data);
+      }
+
+      match /petWeights/{weightId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['petId', 'at', 'value', 'unit', 'by', 'createdAt'])
+          && petStr(request.resource.data, 'petId', 1, 128)
+          && request.resource.data.at is int
+          && request.resource.data.value is number
+          && request.resource.data.value > 0
+          && request.resource.data.value < 2000
+          && request.resource.data.unit in ['kg', 'lb']
+          && petAuthored(request.resource.data);
+      }
+
+      match /petRecords/{recordId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['petId', 'title', 'date', 'text', 'createdAt', 'updatedAt', 'by'])
+          && petStr(request.resource.data, 'petId', 1, 128)
+          && petStr(request.resource.data, 'title', 1, 120)
+          && petYmd(request.resource.data, 'date')
+          && petOptStr(request.resource.data, 'text', 2000)
+          && petAuthored(request.resource.data);
+      }
+
+      // The daily feeding board: each pet's meals (AM, PM, ...) and the feeds that tick them.
+      match /petMeals/{mealId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['petId', 'name', 'time', 'food', 'portion', 'note', 'createdAt', 'updatedAt', 'by'])
+          && petStr(request.resource.data, 'petId', 1, 128)
+          && petStr(request.resource.data, 'name', 1, 40)
+          && request.resource.data.time is string
+          && request.resource.data.time.matches('([01][0-9]|2[0-3]):[0-5][0-9]')
+          && petOptStr(request.resource.data, 'food', 80)
+          && petOptStr(request.resource.data, 'portion', 40)
+          && petOptStr(request.resource.data, 'note', 200)
+          && petAuthored(request.resource.data);
+      }
+
+      match /petFeedings/{feedingId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['petId', 'mealId', 'at', 'portion', 'note', 'by', 'createdAt', 'updatedAt'])
+          && petStr(request.resource.data, 'petId', 1, 128)
+          && petOptStr(request.resource.data, 'mealId', 128)
+          && request.resource.data.at is int
+          && petOptStr(request.resource.data, 'portion', 40)
+          && petOptStr(request.resource.data, 'note', 200)
+          && petAuthored(request.resource.data);
+      }
+
+      // Short medicine courses ("1 tablet twice a day for 7 days") and the doses given.
+      match /petMedCourses/{courseId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['petId', 'name', 'dose', 'timesPerDay', 'times', 'startDate', 'days', 'withFood', 'notes', 'createdAt', 'updatedAt', 'by'])
+          && petStr(request.resource.data, 'petId', 1, 128)
+          && petStr(request.resource.data, 'name', 1, 80)
+          && petStr(request.resource.data, 'dose', 0, 80)
+          && request.resource.data.timesPerDay is int
+          && request.resource.data.timesPerDay >= 1
+          && request.resource.data.timesPerDay <= 6
+          && request.resource.data.times is list
+          && request.resource.data.times.size() == request.resource.data.timesPerDay
+          && petYmd(request.resource.data, 'startDate')
+          && request.resource.data.days is int
+          && request.resource.data.days >= 1
+          && request.resource.data.days <= 365
+          && request.resource.data.withFood is bool
+          && petOptStr(request.resource.data, 'notes', 500)
+          && petAuthored(request.resource.data);
+      }
+
+      match /petMedDoses/{doseId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['petId', 'courseId', 'slot', 'at', 'by', 'createdAt'])
+          && petStr(request.resource.data, 'petId', 1, 128)
+          && petStr(request.resource.data, 'courseId', 1, 128)
+          && request.resource.data.slot is int
+          && request.resource.data.slot >= 0
+          && request.resource.data.slot <= 5
+          && request.resource.data.at is int
+          && petAuthored(request.resource.data);
+      }
+
       // Each member's own name and photo (@huishouden/pwa-kit/household saveMyProfile), keyed by
       // their email; only that member writes it.
       match /profiles/{email} {

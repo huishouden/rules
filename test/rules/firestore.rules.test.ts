@@ -428,6 +428,144 @@ describe('household contents', () => {
     });
   });
 
+  describe('Huishouden Pet', () => {
+    const by = 'alice@example.com';
+    const pet = { name: 'Biscuit', species: 'dog', breed: 'Beagle', birthDate: '2027-03-08', weightUnit: 'lb', notes: 'Lamb food only.', createdAt: 1, by };
+    const reminder = { petId: 'p1', kind: 'flea-tick', title: 'Flea and tick', every: 1, unit: 'month', due: '2031-05-12', lastDoneAt: 1, createdAt: 1, by };
+    const dose = { petId: 'p1', reminderId: 'r1', title: 'Flea and tick', at: 1700000000000, by, createdAt: 1700000000000 };
+    const visit = {
+      petIds: ['p1', 'p2'],
+      kind: 'vet',
+      title: 'Yearly check-up',
+      at: 1700000000000,
+      location: '25 Example Street',
+      contactId: 'c1',
+      calendarEventId: 'evt-1',
+      calendarLink: 'https://calendar.example.com/event?eid=1',
+      createdAt: 1,
+      by,
+    };
+    const weight = { petId: 'p1', at: 1700000000000, value: 26.1, unit: 'lb', by, createdAt: 1700000000000 };
+    const record = { petId: 'p1', title: 'Allergy test', date: '2030-11-14', text: 'Lamb only.', createdAt: 1, by };
+    const meal = { petId: 'p1', name: 'AM', time: '09:00', food: 'Lamb kibble', portion: '1 cup', note: 'Supplement mixed in', createdAt: 1, by };
+    const feeding = { petId: 'p1', mealId: 'p1-am', at: 1700000000000, portion: '1 cup', note: 'Ate it all', by, createdAt: 1700000000000 };
+    const course = { petId: 'p1', name: 'Antibiotic', dose: '1 tablet', timesPerDay: 2, times: ['09:00', '19:00'], startDate: '2031-05-12', days: 7, withFood: true, notes: 'For the ear', createdAt: 1, by };
+    const medDose = { petId: 'p1', courseId: 'k1', slot: 1, at: 1700000000000, by, createdAt: 1700000000000 };
+    const cases: [string, Record<string, unknown>][] = [
+      ['petMeals', meal],
+      ['petFeedings', feeding],
+      ['petMedCourses', course],
+      ['petMedDoses', medDose],
+      ['petProfiles', pet],
+      ['petReminders', reminder],
+      ['petDoses', dose],
+      ['petAppointments', visit],
+      ['petWeights', weight],
+      ['petRecords', record],
+    ];
+
+    for (const [col, data] of cases) {
+      it(`lets members keep ${col}, with only the known fields, and nobody else`, async () => {
+        await assertSucceeds(setDoc(doc(as(ALICE), `households/h1/${col}/x1`), data));
+        await assertSucceeds(getDoc(doc(as(BOB), `households/h1/${col}/x1`)));
+        await assertSucceeds(setDoc(doc(as(BOB), `households/h1/${col}/x1`), { ...data, by: BOB }));
+        await assertFails(getDoc(doc(as(MALLORY), `households/h1/${col}/x1`)));
+        await assertFails(getDocs(collection(as(MALLORY), `households/h1/${col}`)));
+        await assertFails(setDoc(doc(as(MALLORY), `households/h1/${col}/x2`), data));
+        await assertFails(setDoc(doc(as(ALICE), `households/h1/${col}/x3`), { ...data, extra: true }));
+        await assertFails(deleteDoc(doc(as(MALLORY), `households/h1/${col}/x1`)));
+        await assertSucceeds(deleteDoc(doc(as(BOB), `households/h1/${col}/x1`)));
+      });
+    }
+
+    it('checks pet profiles: name, species, unit and date shape', async () => {
+      const db = as(ALICE);
+      await assertSucceeds(setDoc(doc(db, 'households/h1/petProfiles/p2'), { name: 'Miso', species: 'cat', weightUnit: 'kg', createdAt: 1, by }));
+      await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p3'), { ...pet, name: '' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p3'), { ...pet, name: 'x'.repeat(61) }));
+      await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p3'), { ...pet, species: 'dragon' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p3'), { ...pet, weightUnit: 'stone' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p3'), { ...pet, birthDate: 'March 2027' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p3'), { ...pet, notes: 'x'.repeat(1001) }));
+      await assertFails(setDoc(doc(db, 'households/h1/petProfiles/p3'), { ...pet, createdAt: 'yesterday' }));
+    });
+
+    it('checks reminders: a schedule needs both every and unit, within bounds', async () => {
+      const db = as(ALICE);
+      const { every: _every, unit: _unit, ...once } = reminder;
+      await assertSucceeds(setDoc(doc(db, 'households/h1/petReminders/r2'), once));
+      await assertFails(setDoc(doc(db, 'households/h1/petReminders/r3'), { ...once, every: 1 }));
+      await assertFails(setDoc(doc(db, 'households/h1/petReminders/r3'), { ...once, unit: 'month' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petReminders/r3'), { ...reminder, every: 0 }));
+      await assertFails(setDoc(doc(db, 'households/h1/petReminders/r3'), { ...reminder, every: 366 }));
+      await assertFails(setDoc(doc(db, 'households/h1/petReminders/r3'), { ...reminder, every: 1.5 }));
+      await assertFails(setDoc(doc(db, 'households/h1/petReminders/r3'), { ...reminder, unit: 'fortnight' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petReminders/r3'), { ...reminder, kind: 'party' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petReminders/r3'), { ...reminder, due: 1700000000000 }));
+      await assertFails(setDoc(doc(db, 'households/h1/petReminders/r3'), { ...reminder, title: 'x'.repeat(81) }));
+    });
+
+    it('records a dose and the next due date in one batch', async () => {
+      const db = as(BOB);
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'households/h1/petDoses/d1'), dose);
+      batch.set(doc(db, 'households/h1/petReminders/r1'), { ...reminder, due: '2031-06-14', lastDoneAt: 1700000000000, updatedAt: 1700000000000 });
+      await assertSucceeds(batch.commit());
+      await assertFails(setDoc(doc(db, 'households/h1/petDoses/d2'), { ...dose, at: '2031-05-14' }));
+    });
+
+    it('checks appointments: pets list, kind, title and calendar link', async () => {
+      const db = as(ALICE);
+      await assertSucceeds(setDoc(doc(db, 'households/h1/petAppointments/a2'), { petIds: [], kind: 'other', title: 'Kennel tour', at: 1, createdAt: 1, by }));
+      await assertFails(setDoc(doc(db, 'households/h1/petAppointments/a3'), { ...visit, petIds: Array.from({ length: 11 }, (_, i) => `p${i}`) }));
+      await assertFails(setDoc(doc(db, 'households/h1/petAppointments/a3'), { ...visit, petIds: 'p1' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petAppointments/a3'), { ...visit, kind: 'party' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petAppointments/a3'), { ...visit, title: '' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petAppointments/a3'), { ...visit, calendarLink: 'javascript:alert(1)' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petAppointments/a3'), { ...visit, notes: 'x'.repeat(501) }));
+    });
+
+    it('checks weights: a positive number in kg or lb', async () => {
+      const db = as(ALICE);
+      await assertSucceeds(setDoc(doc(db, 'households/h1/petWeights/w2'), { ...weight, value: 4, unit: 'kg' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petWeights/w3'), { ...weight, value: 0 }));
+      await assertFails(setDoc(doc(db, 'households/h1/petWeights/w3'), { ...weight, value: '26.1' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petWeights/w3'), { ...weight, value: 5000 }));
+      await assertFails(setDoc(doc(db, 'households/h1/petWeights/w3'), { ...weight, unit: 'stone' }));
+    });
+
+    it('checks meals and feeds: a name, a 24-hour time, an int time logged', async () => {
+      const db = as(ALICE);
+      await assertSucceeds(setDoc(doc(db, 'households/h1/petMeals/m2'), { petId: 'p1', name: 'PM', time: '19:00', createdAt: 1, by }));
+      await assertSucceeds(setDoc(doc(db, 'households/h1/petFeedings/f2'), { petId: 'p1', at: 1, by, createdAt: 1 }));
+      await assertFails(setDoc(doc(db, 'households/h1/petMeals/m3'), { ...meal, name: '' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petMeals/m3'), { ...meal, time: '7am' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petMeals/m3'), { ...meal, time: '24:00' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petMeals/m3'), { ...meal, portion: 'x'.repeat(41) }));
+      await assertFails(setDoc(doc(db, 'households/h1/petFeedings/f3'), { ...feeding, at: '07:12' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petFeedings/f3'), { ...feeding, note: 'x'.repeat(201) }));
+    });
+
+    it('checks medicine courses: one time per dose, 1 to 365 days, a with-food flag', async () => {
+      const db = as(ALICE);
+      await assertFails(setDoc(doc(db, 'households/h1/petMedCourses/k3'), { ...course, times: ['09:00'] }));
+      await assertFails(setDoc(doc(db, 'households/h1/petMedCourses/k3'), { ...course, timesPerDay: 7, times: Array(7).fill('09:00') }));
+      await assertFails(setDoc(doc(db, 'households/h1/petMedCourses/k3'), { ...course, days: 0 }));
+      await assertFails(setDoc(doc(db, 'households/h1/petMedCourses/k3'), { ...course, days: 400 }));
+      await assertFails(setDoc(doc(db, 'households/h1/petMedCourses/k3'), { ...course, withFood: 'yes' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petMedCourses/k3'), { ...course, startDate: 'today' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petMedDoses/q3'), { ...medDose, slot: 6 }));
+      await assertFails(setDoc(doc(db, 'households/h1/petMedDoses/q3'), { ...medDose, courseId: '' }));
+    });
+
+    it('checks records: title, date and text length', async () => {
+      const db = as(ALICE);
+      await assertFails(setDoc(doc(db, 'households/h1/petRecords/x3'), { ...record, title: '' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petRecords/x3'), { ...record, date: '14 Nov 2030' }));
+      await assertFails(setDoc(doc(db, 'households/h1/petRecords/x3'), { ...record, text: 'x'.repeat(2001) }));
+    });
+  });
+
   it('rejects items without a name', async () => {
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/items/i3'), { name: '', listId: 'groceries', completed: false }));
   });
