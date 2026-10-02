@@ -20,20 +20,39 @@ service cloud.firestore {
 
       allow read: if signedIn() && myEmail() in resource.data.members;
 
-      // A new household starts with only its creator; others are invited from inside.
+      function householdName(d) {
+        return d.name is string && d.name.size() <= 100;
+      }
+
+      // Lowercase emails, checked as one string because rules have no loops: joined with spaces
+      // (which no address contains), each entry must look like an address with no capitals, and
+      // splitting back must give the same list, which fails for anything that isn't a string.
+      function memberEmails(l) {
+        let one = '[^ @A-Z]{1,128}@[^ @A-Z]{1,128}';
+        return l is list && l.size() >= 1 && l.size() <= 12
+          && l.join(' ').matches(one + '( ' + one + ')*') && l.join(' ').split(' ') == l;
+      }
+
+      // A new household starts with only its creator; others are invited from inside. Apps open the
+      // oldest household a person belongs to, so `createdAt` must be the real time of creation
+      // (within an hour, for clock drift): a backdated household could otherwise invite someone
+      // and take the place of their own in every app.
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly(['name', 'members', 'createdAt'])
         && request.resource.data.members == [myEmail()]
-        && request.resource.data.name is string
-        && request.resource.data.createdAt is int;
+        && householdName(request.resource.data)
+        && request.resource.data.createdAt is int
+        && request.resource.data.createdAt > request.time.toMillis() - 3600000
+        && request.resource.data.createdAt < request.time.toMillis() + 3600000;
 
       // Members may invite or remove others but cannot edit themselves out by accident.
       // Separately, each member records their own first sign-in in `joined`, and only their own.
       allow update: if signedIn()
         && myEmail() in resource.data.members
         && (
-          (myEmail() in request.resource.data.members
-            && request.resource.data.members.size() <= 12
+          (memberEmails(request.resource.data.members)
+            && myEmail() in request.resource.data.members
+            && householdName(request.resource.data)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'members']))
           || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['joined'])
             && request.resource.data.joined == resource.data.get('joined', []).concat([myEmail()]))
@@ -651,7 +670,7 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(['data', 'updatedAt', 'by'])
           && request.resource.data.data is string
           && request.resource.data.data.size() <= 100000
-          && request.resource.data.data.matches('^data:image/(webp|jpeg);base64,.*')
+          && request.resource.data.data.matches('data:image/(webp|jpeg);base64,[A-Za-z0-9+/]+={0,2}')
           && request.resource.data.updatedAt is int
           && petStr(request.resource.data, 'by', 3, 254);
       }
@@ -684,7 +703,8 @@ service cloud.firestore {
       }
 
       // The household's contacts, shared by every app (@huishouden/pwa-kit/contacts; fields match
-      // CONTACT_FIELDS there).
+      // CONTACT_FIELDS and CONTACT_LIMITS there). Links are web addresses only, never javascript: or
+      // data: URLs, since every app renders them as links.
       match /contacts/{contactId} {
         allow read, delete: if isMember();
         allow create, update: if isMember()
@@ -695,7 +715,15 @@ service cloud.firestore {
           && request.resource.data.apps is list
           && request.resource.data.apps.size() <= 20
           && (!('notes' in request.resource.data) || (request.resource.data.notes is string && request.resource.data.notes.size() <= 1000))
-          && (!('address' in request.resource.data) || (request.resource.data.address is string && request.resource.data.address.size() <= 300));
+          && (!('address' in request.resource.data) || (request.resource.data.address is string && request.resource.data.address.size() <= 300))
+          && optString(request.resource.data, 'role', 60)
+          && optString(request.resource.data, 'phone', 40)
+          && optString(request.resource.data, 'email', 120)
+          && (!('website' in request.resource.data) || (request.resource.data.website is string
+            && request.resource.data.website.size() <= 300 && request.resource.data.website.matches('(?i)https?://.+')))
+          && (!('mapsUrl' in request.resource.data) || (request.resource.data.mapsUrl is string
+            && request.resource.data.mapsUrl.size() <= 2000 && request.resource.data.mapsUrl.matches('https://.+')))
+          && hhAppNames(request.resource.data.apps);
       }
 
       // Reminders any app schedules for the household (@huishouden/pwa-kit/reminders; fields match

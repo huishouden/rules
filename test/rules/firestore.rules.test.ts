@@ -7,7 +7,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { arrayUnion, collection, collectionGroup, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 
 const ALICE = 'alice@example.com';
 const BOB = 'bob@example.com';
@@ -19,9 +19,8 @@ beforeAll(async () => {
   env = await initializeTestEnvironment({
     projectId: 'demo-huishouden-rules',
     firestore: {
+      // Host and port come from FIRESTORE_EMULATOR_HOST, which `firebase emulators:exec` sets.
       rules: readFileSync(resolve(__dirname, '../../firestore.rules'), 'utf8'),
-      host: '127.0.0.1',
-      port: 8080,
     },
   });
 });
@@ -61,19 +60,19 @@ describe('households', () => {
   });
 
   it('allows creating a household that contains only yourself', async () => {
-    await assertSucceeds(setDoc(doc(as(MALLORY), 'households/h2'), { name: 'Mine', members: [MALLORY], createdAt: 5 }));
+    await assertSucceeds(setDoc(doc(as(MALLORY), 'households/h2'), { name: 'Mine', members: [MALLORY], createdAt: Date.now() }));
   });
 
   it('allows creating a household and its default lists in one batch', async () => {
     const db = as(MALLORY);
     const batch = writeBatch(db);
-    batch.set(doc(db, 'households/h3'), { name: 'Mine', members: [MALLORY], createdAt: 5 });
+    batch.set(doc(db, 'households/h3'), { name: 'Mine', members: [MALLORY], createdAt: Date.now() });
     batch.set(doc(db, 'households/h3/lists/groceries'), { name: 'Groceries' });
     await assertSucceeds(batch.commit());
   });
 
   it('blocks creating a household that adds someone else', async () => {
-    await assertFails(setDoc(doc(as(MALLORY), 'households/h2'), { name: 'Mine', members: [MALLORY, ALICE], createdAt: 5 }));
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h2'), { name: 'Mine', members: [MALLORY, ALICE], createdAt: Date.now() }));
   });
 
   it('lets a member invite someone', async () => {
@@ -926,5 +925,116 @@ describe('Huishouden Spending', () => {
     await assertFails(setDoc(doc(db, 'households/h1/spendingRules/r-x'), { ...rule, regex: '.*' }));
     await assertFails(getDocs(collection(as(MALLORY), 'households/h1/spendingRules')));
     await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/spendingRules/r-example-cafe')));
+  });
+});
+
+// Adversarial cases from the October 2026 security audit: each is an attack that must fail, or a
+// boundary that must hold, written as the attacker would try it.
+describe('attacks', () => {
+  const now = () => Date.now();
+
+  it('never lists households to someone who is not in them', async () => {
+    const db = as(MALLORY);
+    await assertFails(getDocs(query(collection(db, 'households'), where('members', 'array-contains', ALICE))));
+    await assertFails(getDocs(collection(db, 'households')));
+    await assertFails(getDocs(query(collection(db, 'households'), where('name', '==', 'Home'))));
+  });
+
+  it('refuses tokens without a verified email', async () => {
+    const anonymous = env.authenticatedContext('anon', {}).firestore();
+    await assertFails(getDoc(doc(anonymous, 'households/h1')));
+    await assertFails(setDoc(doc(anonymous, 'households/h9'), { name: 'Mine', members: ['anon'], createdAt: now() }));
+    await assertFails(setDoc(doc(as(MALLORY, false), 'households/h9'), { name: 'Mine', members: [MALLORY], createdAt: now() }));
+    // Someone holding an unverified address cannot step into an invitation for it.
+    await assertFails(getDoc(doc(as(BOB, false), 'households/h1')));
+  });
+
+  it('matches members by lowercase email, whatever case the token carries', async () => {
+    await assertSucceeds(getDoc(doc(as('Alice@Example.COM'), 'households/h1')));
+  });
+
+  it('refuses a household backdated to look older than the ones its members already use', async () => {
+    // Apps open the oldest household a person is in, so a backdated one would be picked first.
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h2'), { name: 'Home', members: [MALLORY], createdAt: 0 }));
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h2'), { name: 'Home', members: [MALLORY], createdAt: now() - 86400000 }));
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h2'), { name: 'Home', members: [MALLORY], createdAt: now() + 86400000 }));
+    await assertSucceeds(setDoc(doc(as(MALLORY), 'households/h2'), { name: 'Home', members: [MALLORY], createdAt: now() }));
+    await assertFails(updateDoc(doc(as(MALLORY), 'households/h2'), { createdAt: 0 }));
+    await assertFails(updateDoc(doc(as(ALICE), 'households/h1'), { createdAt: 0 }));
+  });
+
+  it('refuses taking over an existing household id', async () => {
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h1'), { name: 'Mine', members: [MALLORY], createdAt: now() }));
+  });
+
+  it('keeps the members a list of lowercase emails', async () => {
+    const h1 = doc(as(BOB), 'households/h1');
+    await assertFails(updateDoc(h1, { members: { [BOB]: true } }));
+    await assertFails(updateDoc(h1, { members: [ALICE, BOB, 'Carol@Example.com'] }));
+    await assertFails(updateDoc(h1, { members: [ALICE, BOB, 7] }));
+    await assertFails(updateDoc(h1, { members: [ALICE, BOB, 'x'.repeat(255)] }));
+    await assertFails(updateDoc(h1, { name: 'x'.repeat(101) }));
+    await assertFails(updateDoc(h1, { name: 7 }));
+    await assertSucceeds(updateDoc(h1, { members: arrayUnion('carol@example.com'), name: 'Our home' }));
+  });
+
+  it('refuses a creation batch that slips someone into another household', async () => {
+    const db = as(MALLORY);
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'households/h1'), { members: arrayUnion(MALLORY) });
+    batch.set(doc(db, 'households/h1/lists/sneaky'), { name: 'Sneaky' });
+    await assertFails(batch.commit());
+  });
+
+  it('allows no collection-group reads across households', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'households/h2'), { name: 'Other', members: [MALLORY], createdAt: 1 });
+      await setDoc(doc(db, 'households/h2/reminders/r1'), { title: 'x', sent: false, at: 1 });
+    });
+    const db = as(ALICE);
+    for (const group of ['reminders', 'agenda', 'pushSubscriptions', 'profiles', 'contacts', 'spendingTransactions', 'items']) {
+      await assertFails(getDocs(collectionGroup(db, group)));
+    }
+  });
+
+  it("refuses another household's data to a member of a different household", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'households/h2'), { name: 'Other', members: [MALLORY], createdAt: 1 });
+    });
+    const db = as(MALLORY);
+    await assertFails(getDoc(doc(db, 'households/h1/items/i1')));
+    await assertFails(setDoc(doc(db, 'households/h1/reminders/r1'), {
+      app: 'pet', title: 'Hi', body: '', at: 1, url: 'https://example.com', recipients: 'all', sent: false, createdAt: 1, by: MALLORY,
+    }));
+    await assertFails(setDoc(doc(db, 'households/h1/pushSubscriptions/s1'), {
+      email: MALLORY, app: 'pet', endpoint: 'https://push.example.com/x', keys: { p256dh: 'k', auth: 'a' }, createdAt: 1,
+    }));
+  });
+
+  it('keeps contact links to web addresses', async () => {
+    const vet = { name: 'Example Vet', apps: ['pet'], createdAt: 1, by: ALICE };
+    const fails = (extra: Record<string, unknown>) => assertFails(setDoc(doc(as(ALICE), 'households/h1/contacts/c9'), { ...vet, ...extra }));
+    await fails({ website: 'javascript:alert(document.cookie)' });
+    await fails({ website: 'data:text/html,<script>alert(1)</script>' });
+    await fails({ mapsUrl: 'javascript:alert(1)' });
+    await fails({ website: 'https://example.com/' + 'x'.repeat(300) });
+    await fails({ phone: 'x'.repeat(41) });
+    await fails({ email: 'x'.repeat(121) });
+    await fails({ role: 'x'.repeat(61) });
+    await fails({ apps: [{ html: '<b>' }] });
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/contacts/c9'), {
+      ...vet, website: 'https://example.com', mapsUrl: 'https://maps.google.com/?q=x', phone: '+1 555 0100', email: 'vet@example.com', role: 'Vet',
+    }));
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/contacts/c10'), { ...vet, website: 'http://example.com' }));
+  });
+
+  it('keeps pet photos to image data', async () => {
+    const photo = (data: string) => setDoc(doc(as(ALICE), 'households/h1/petPhotos/p1'), { data, updatedAt: 1, by: ALICE });
+    await assertFails(photo('data:image/svg+xml;base64,PHN2Zz48c2NyaXB0PmFsZXJ0KDEpPC9zY3JpcHQ+PC9zdmc+'));
+    await assertFails(photo('data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=='));
+    await assertFails(photo('javascript:alert(1)//data:image/jpeg;base64,'));
+    await assertFails(photo('data:image/jpeg;base64,"><script>alert(1)</script>'));
+    await assertSucceeds(photo('data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ=='));
   });
 });
