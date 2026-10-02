@@ -389,6 +389,7 @@ const MONEY: { path: string; doc: (me: string) => Record<string, unknown> }[] = 
   { path: 'spendingCards/c1', doc: (by) => ({ name: 'Card One', alertWords: [], createdAt: 1, by }) },
   { path: 'spendingRules/r1', doc: (by) => ({ contains: 'GROCERY', category: 'Groceries', createdAt: 1, by }) },
   { path: 'billSources/power', doc: (by) => ({ name: 'Example Power Co', kind: 'electric', from: 'billing@power.example.com', autopay: null, createdAt: 1, createdBy: by, updatedAt: 1 }) },
+  { path: 'billSuggestions/netflix', doc: (by) => ({ status: 'dismissed', name: 'Netflix', by, at: 1 }) },
   {
     path: 'bills/b1',
     doc: (by) => ({ schema: 'bill/v1', source: 'manual', kind: 'electric', label: 'Power', due: '2031-05-20', amountDue: { amount: '120.00', currency: 'USD' }, status: 'due', autopay: null, createdAt: 1, createdBy: by, updatedAt: 1 }),
