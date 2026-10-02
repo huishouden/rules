@@ -928,3 +928,22 @@ describe('Huishouden Spending', () => {
     await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/spendingRules/r-example-cafe')));
   });
 });
+
+describe('privacy', () => {
+  const choice = { telemetry: 'off', updatedAt: 1 };
+
+  it('lets a person save and read only their own choice', async () => {
+    await assertSucceeds(setDoc(doc(as(ALICE), 'privacy/alice@example.com'), choice));
+    await assertSucceeds(getDoc(doc(as(ALICE), 'privacy/alice@example.com')));
+    await assertSucceeds(setDoc(doc(as(MALLORY), 'privacy/mallory@example.com'), { ...choice, telemetry: 'on' }));
+    await assertFails(getDoc(doc(as(BOB), 'privacy/alice@example.com')));
+    await assertFails(setDoc(doc(as(BOB), 'privacy/alice@example.com'), choice));
+    await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), 'privacy/alice@example.com')));
+  });
+
+  it('checks the shape', async () => {
+    await assertFails(setDoc(doc(as(ALICE), 'privacy/alice@example.com'), { ...choice, telemetry: 'sometimes' }));
+    await assertFails(setDoc(doc(as(ALICE), 'privacy/alice@example.com'), { ...choice, note: 'x' }));
+    await assertFails(setDoc(doc(as(ALICE), 'privacy/alice@example.com'), { telemetry: 'off' }));
+  });
+});

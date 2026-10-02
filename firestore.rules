@@ -12,6 +12,17 @@ service cloud.firestore {
       return request.auth.token.email.lower();
     }
 
+    // Each person's choice about anonymous usage and error reports, for every app and device
+    // (@huishouden/pwa-kit/observability: watchTelemetryOff, setTelemetryOff). Only they read or
+    // write it; it needs no household, so a person not yet in one can choose too.
+    match /privacy/{email} {
+      allow read, delete: if signedIn() && email == myEmail();
+      allow create, update: if signedIn() && email == myEmail()
+        && request.resource.data.keys().hasOnly(['telemetry', 'updatedAt'])
+        && request.resource.data.telemetry in ['on', 'off']
+        && request.resource.data.updatedAt is int;
+    }
+
     match /households/{householdId} {
       function isMember() {
         return signedIn()
