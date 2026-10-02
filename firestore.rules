@@ -846,6 +846,16 @@ service cloud.firestore {
             && hhWords(request.resource.data.pantryAssumed, 40, 40)
             && request.resource.data.updatedAt is int
             && request.resource.data.by == myEmail())
+          // Tasks: which Google Tasks lists feed which household list ({ googleListId, title,
+          // listId, mode: 'add' | 'suggest' } each). Only the shape is checked (rules have no loops);
+          // Tasks writes each entry clipped and reads them defensively.
+          || (docId == 'tasks'
+            && request.resource.data.keys().hasAll(['googleTasks', 'updatedAt', 'by'])
+            && request.resource.data.keys().hasOnly(['googleTasks', 'updatedAt', 'by'])
+            && request.resource.data.googleTasks is list
+            && request.resource.data.googleTasks.size() <= 10
+            && request.resource.data.updatedAt is int
+            && request.resource.data.by == myEmail())
         );
       }
 
