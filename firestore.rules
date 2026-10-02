@@ -780,16 +780,39 @@ service cloud.firestore {
           && (l.size() == 0 || (joined.matches('[^/]{1,40}(/[^/]{1,40})*') && joined.split('/') == l));
       }
 
+      // The household's food preferences (@huishouden/pwa-kit/food; fields match FOOD_FIELDS and
+      // FOOD_LIMITS there), one document, `food`: who eats at home with their diets and what they
+      // avoid, and the kitchen basics recipes may assume. A request may evaluate at most 1000
+      // expressions and rules have no loops, so checking every field of up to 20 people does not
+      // fit: the rules check the shape (members only, exact top-level fields, sizes, the pantry as
+      // strings of 1-40 characters, `by` the signed-in member) and the kit writes each person
+      // clipped to FOOD_PERSON_FIELDS and reads them defensively.
+      function hhWords(l, maxItems, maxLength) {
+        let joined = l.join('|');
+        let item = '[^|]{1,' + string(maxLength) + '}';
+        return l is list && l.size() <= maxItems
+          && (l.size() == 0 || (joined.matches(item + '([|]' + item + ')*') && joined.split('[|]') == l));
+      }
+
       match /settings/{docId} {
         allow read: if isMember();
         allow delete: if false;
-        allow create, update: if isMember()
-          && docId == 'portal'
-          && request.resource.data.keys().hasOnly(['order', 'hidden', 'updatedAt', 'by'])
-          && hhAppNames(request.resource.data.order)
-          && hhAppNames(request.resource.data.hidden)
-          && request.resource.data.updatedAt is int
-          && hhStr(request.resource.data, 'by', 0, 200);
+        allow create, update: if isMember() && (
+          (docId == 'portal'
+            && request.resource.data.keys().hasOnly(['order', 'hidden', 'updatedAt', 'by'])
+            && hhAppNames(request.resource.data.order)
+            && hhAppNames(request.resource.data.hidden)
+            && request.resource.data.updatedAt is int
+            && hhStr(request.resource.data, 'by', 0, 200))
+          || (docId == 'food'
+            && request.resource.data.keys().hasAll(['people', 'pantryAssumed', 'updatedAt', 'by'])
+            && request.resource.data.keys().hasOnly(['people', 'pantryAssumed', 'updatedAt', 'by'])
+            && request.resource.data.people is list
+            && request.resource.data.people.size() <= 20
+            && hhWords(request.resource.data.pantryAssumed, 40, 40)
+            && request.resource.data.updatedAt is int
+            && request.resource.data.by == myEmail())
+        );
       }
 
       match /favorites/{favoriteId} {

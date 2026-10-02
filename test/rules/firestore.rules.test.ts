@@ -366,6 +366,52 @@ describe('household contents', () => {
     });
   });
 
+  describe('food preferences', () => {
+    const path = 'households/h1/settings/food';
+    const sam = { id: ALICE, name: 'Alice', member: ALICE, diets: ['gerd', 'pregnant'], avoid: ['cilantro'], note: 'Dinner before 7' };
+    const kid = { id: 'kid-1', name: 'Robin', diets: ['nut allergy'], avoid: [] };
+    const food = { people: [sam, kid], pantryAssumed: ['salt', 'black pepper', 'cooking oil'], updatedAt: 1, by: ALICE };
+
+    it('lets members read and save them, and nobody else', async () => {
+      await assertSucceeds(setDoc(doc(as(ALICE), path), food));
+      await assertSucceeds(getDoc(doc(as(BOB), path)));
+      await assertSucceeds(setDoc(doc(as(BOB), path), { people: [], pantryAssumed: [], updatedAt: 2, by: BOB }));
+      await assertFails(getDoc(doc(as(MALLORY), path)));
+      await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), path)));
+      await assertFails(setDoc(doc(as(MALLORY), path), { ...food, by: MALLORY }));
+      await assertFails(deleteDoc(doc(as(ALICE), path)));
+    });
+
+    it('accepts the most the kit saves', async () => {
+      const full = (i: number) => ({
+        id: `person-${i}`.padEnd(60, 'x'),
+        name: 'n'.repeat(60),
+        member: `${'m'.repeat(240)}@example.com`,
+        diets: ['vegan', 'vegetarian', 'pescatarian', 'gluten-free', 'dairy-free', 'nut allergy', 'shellfish allergy', 'gerd', 'pregnant', 'low-sodium', 'halal', 'kosher'],
+        avoid: Array.from({ length: 30 }, (_, j) => `${j}`.padEnd(40, 'a')),
+        note: 'z'.repeat(200),
+      });
+      const pantry = Array.from({ length: 40 }, (_, j) => `${j}`.padEnd(40, 'p'));
+      await assertSucceeds(setDoc(doc(as(ALICE), path), { ...food, people: Array.from({ length: 20 }, (_, i) => full(i)), pantryAssumed: pantry }));
+    });
+
+    it('checks the document', async () => {
+      const fails = (data: object) => assertFails(setDoc(doc(as(ALICE), path), data));
+      await fails({ ...food, colour: 'green' });
+      await fails({ people: food.people, updatedAt: 1, by: ALICE });
+      await fails({ ...food, by: BOB });
+      await fails({ ...food, updatedAt: '2026-10-02' });
+      await fails({ ...food, people: 'Alice' });
+      await fails({ ...food, people: Array.from({ length: 21 }, (_, i) => ({ ...kid, id: `k${i}` })) });
+      await fails({ ...food, pantryAssumed: Array.from({ length: 41 }, (_, j) => `p${j}`) });
+      await fails({ ...food, pantryAssumed: ['salt|pepper'] });
+      await fails({ ...food, pantryAssumed: ['salt', ''] });
+      await fails({ ...food, pantryAssumed: ['x'.repeat(41)] });
+      await fails({ ...food, pantryAssumed: ['salt', 7] });
+      await fails({ ...food, pantryAssumed: 'salt' });
+    });
+  });
+
   describe('reminders', () => {
     const reminder = {
       app: 'pet',
