@@ -1,0 +1,2 @@
+[extend]
+path = "node_modules/@huishouden/pwa-kit/actions/leak-scan/gitleaks.toml"
