@@ -269,6 +269,69 @@ describe('household contents', () => {
     });
   });
 
+  it('lets members keep Home upkeep jobs with a valid schedule, and nobody else', async () => {
+    const job = {
+      title: 'Change HVAC filter',
+      category: 'hvac',
+      schedule: { kind: 'after-done', every: 3, unit: 'month' },
+      due: '2031-10-20',
+      lastDone: '2031-07-20',
+      createdAt: 1,
+      by: ALICE,
+    };
+    const fixed = { ...job, title: 'HOA dues', category: 'paperwork', schedule: { kind: 'fixed', every: 1, unit: 'month', anchor: '2031-01-01' } };
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/homeTasks/t1'), job));
+    await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/homeTasks/t2'), { ...fixed, contactId: 'c1', calendarLink: 'https://calendar.example.com/e', updatedAt: 2 }));
+    await assertSucceeds(getDoc(doc(as(BOB), 'households/h1/homeTasks/t1')));
+    await assertFails(getDoc(doc(as(MALLORY), 'households/h1/homeTasks/t1')));
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h1/homeTasks/t3'), job));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/homeTasks/t4'), { ...job, extra: true }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/homeTasks/t4'), { ...job, title: '' }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/homeTasks/t4'), { ...job, category: 'party' }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/homeTasks/t4'), { ...job, due: 'next week' }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/homeTasks/t4'), { ...job, schedule: { kind: 'fixed', every: 1, unit: 'month' } }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/homeTasks/t4'), { ...job, schedule: { kind: 'after-done', every: 0, unit: 'month' } }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/homeTasks/t4'), { ...job, schedule: { kind: 'after-done', every: 3, unit: 'decade' } }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/homeTasks/t4'), { ...job, calendarLink: 'javascript:alert(1)' }));
+    await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/homeTasks/t1')));
+  });
+
+  it('lets members keep the Home service history with whole-cent costs', async () => {
+    const visit = { date: '2031-07-28', title: 'Pest control visit', taskId: 't1', contactId: 'c1', costCents: 9500, notes: 'Garage too.', createdAt: 1, by: BOB };
+    await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/homeServiceLog/e1'), visit));
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/homeServiceLog/e2'), { date: '2031-10-16', title: 'Change HVAC filter', who: 'We did it', createdAt: 1, by: ALICE }));
+    await assertSucceeds(getDoc(doc(as(ALICE), 'households/h1/homeServiceLog/e1')));
+    await assertFails(getDoc(doc(as(MALLORY), 'households/h1/homeServiceLog/e1')));
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h1/homeServiceLog/e3'), visit));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/homeServiceLog/e3'), { ...visit, costCents: 95.5 }));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/homeServiceLog/e3'), { ...visit, costCents: -1 }));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/homeServiceLog/e3'), { ...visit, date: 1700000000000 }));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/homeServiceLog/e3'), { ...visit, notes: 'x'.repeat(1001) }));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/homeServiceLog/e3'), { ...visit, card: '4111' }));
+    await assertSucceeds(deleteDoc(doc(as(ALICE), 'households/h1/homeServiceLog/e1')));
+  });
+
+  it('lets members keep Home warranties with https links only', async () => {
+    const fridge = {
+      item: 'Refrigerator',
+      details: 'Example EX-200',
+      purchaseDate: '2029-12-01',
+      warrantyEnd: '2031-12-01',
+      receiptUrl: 'https://receipts.example.com/fridge.pdf',
+      createdAt: 1,
+      by: ALICE,
+    };
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/homeWarranties/w1'), fridge));
+    await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/homeWarranties/w2'), { item: 'Roof', createdAt: 1, by: BOB }));
+    await assertSucceeds(getDoc(doc(as(BOB), 'households/h1/homeWarranties/w1')));
+    await assertFails(getDoc(doc(as(MALLORY), 'households/h1/homeWarranties/w1')));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/homeWarranties/w3'), { ...fridge, item: '' }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/homeWarranties/w3'), { ...fridge, manualUrl: 'http://example.com/manual' }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/homeWarranties/w3'), { ...fridge, warrantyEnd: '1 Dec' }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/homeWarranties/w3'), { ...fridge, price: 1 }));
+    await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/homeWarranties/w1')));
+  });
+
   it('rejects items without a name', async () => {
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/items/i3'), { name: '', listId: 'groceries', completed: false }));
   });

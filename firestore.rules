@@ -239,6 +239,93 @@ service cloud.firestore {
           && request.resource.data.updatedBy is string;
       }
 
+      // Huishouden Home: the house's upkeep jobs with their schedules, the service history, and
+      // warranties. Field lists match TASK_KEYS, SERVICE_KEYS and WARRANTY_KEYS in the app's model.
+      function isYmd(v) {
+        return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+      }
+
+      function optString(d, key, max) {
+        return !(key in d) || (d[key] is string && d[key].size() <= max);
+      }
+
+      function optYmd(d, key) {
+        return !(key in d) || isYmd(d[key]);
+      }
+
+      function optLink(d, key) {
+        return !(key in d) || (d[key] is string && d[key].size() <= 500 && d[key].matches('https://.+'));
+      }
+
+      function stamped(d) {
+        return d.createdAt is int
+          && d.by is string && d.by.size() <= 200
+          && (!('updatedAt' in d) || d.updatedAt is int);
+      }
+
+      function isSchedule(s) {
+        return s is map
+          && s.keys().hasOnly(['kind', 'every', 'unit', 'anchor'])
+          && s.kind in ['after-done', 'fixed']
+          && s.every is int && s.every >= 1 && s.every <= 99
+          && s.unit in ['day', 'week', 'month', 'year']
+          && (s.kind == 'after-done' ? !('anchor' in s) : isYmd(s.get('anchor', null)));
+      }
+
+      match /homeTasks/{taskId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['title', 'category', 'schedule', 'due', 'lastDone', 'contactId', 'notes', 'calendarEventId', 'calendarLink', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 120
+          && request.resource.data.category in ['hvac', 'pest', 'lawn', 'gutters', 'plumbing', 'electrical', 'appliances', 'safety', 'pool', 'paperwork', 'other']
+          && isSchedule(request.resource.data.schedule)
+          && isYmd(request.resource.data.due)
+          && optYmd(request.resource.data, 'lastDone')
+          && optString(request.resource.data, 'contactId', 100)
+          && optString(request.resource.data, 'notes', 1000)
+          && optString(request.resource.data, 'calendarEventId', 1024)
+          && optLink(request.resource.data, 'calendarLink')
+          && stamped(request.resource.data);
+      }
+
+      match /homeServiceLog/{entryId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['date', 'title', 'taskId', 'contactId', 'who', 'costCents', 'notes', 'calendarEventId', 'calendarLink', 'createdAt', 'updatedAt', 'by'])
+          && isYmd(request.resource.data.date)
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 120
+          && optString(request.resource.data, 'taskId', 100)
+          && optString(request.resource.data, 'contactId', 100)
+          && optString(request.resource.data, 'who', 120)
+          && (!('costCents' in request.resource.data) || (request.resource.data.costCents is int
+            && request.resource.data.costCents >= 0 && request.resource.data.costCents <= 100000000))
+          && optString(request.resource.data, 'notes', 1000)
+          && optString(request.resource.data, 'calendarEventId', 1024)
+          && optLink(request.resource.data, 'calendarLink')
+          && stamped(request.resource.data);
+      }
+
+      match /homeWarranties/{warrantyId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['item', 'details', 'purchaseDate', 'warrantyEnd', 'receiptUrl', 'manualUrl', 'contactId', 'notes', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.item is string
+          && request.resource.data.item.size() > 0
+          && request.resource.data.item.size() <= 120
+          && optString(request.resource.data, 'details', 200)
+          && optYmd(request.resource.data, 'purchaseDate')
+          && optYmd(request.resource.data, 'warrantyEnd')
+          && optLink(request.resource.data, 'receiptUrl')
+          && optLink(request.resource.data, 'manualUrl')
+          && optString(request.resource.data, 'contactId', 100)
+          && optString(request.resource.data, 'notes', 1000)
+          && stamped(request.resource.data);
+      }
+
       // Each member's own name and photo (@huishouden/pwa-kit/household saveMyProfile), keyed by
       // their email; only that member writes it.
       match /profiles/{email} {
