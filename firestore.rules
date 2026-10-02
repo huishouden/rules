@@ -643,6 +643,19 @@ service cloud.firestore {
           && petAuthored(request.resource.data);
       }
 
+      // One small avatar photo per pet, keyed by the pet's id, apart from the profile so lists stay
+      // light: a WebP or JPEG data URL (@huishouden/pwa-kit/photo), at most 100 000 characters.
+      match /petPhotos/{petId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['data', 'updatedAt', 'by'])
+          && request.resource.data.data is string
+          && request.resource.data.data.size() <= 100000
+          && request.resource.data.data.matches('^data:image/(webp|jpeg);base64,.*')
+          && request.resource.data.updatedAt is int
+          && petStr(request.resource.data, 'by', 3, 254);
+      }
+
       match /petMedDoses/{doseId} {
         allow read, delete: if isMember();
         allow create, update: if isMember()
