@@ -355,6 +355,54 @@ service cloud.firestore {
           && (!('address' in request.resource.data) || (request.resource.data.address is string && request.resource.data.address.size() <= 300));
       }
 
+      // Reminders any app schedules for the household (@huishouden/pwa-kit/reminders; fields match
+      // REMINDER_FIELDS there). The shared sender (huishouden/notify) finds due, unsent ones with a
+      // service account, pushes them and marks them sent.
+      function hhStr(d, k, lo, hi) {
+        return d[k] is string && d[k].size() >= lo && d[k].size() <= hi;
+      }
+
+      match /reminders/{reminderId} {
+        allow read, delete: if isMember();
+        allow create, update: if isMember()
+          && request.resource.data.keys().hasOnly(['app', 'title', 'body', 'at', 'url', 'recipients', 'ref', 'sent', 'sentAt', 'createdAt', 'by'])
+          && hhStr(request.resource.data, 'app', 1, 40)
+          && hhStr(request.resource.data, 'title', 1, 120)
+          && hhStr(request.resource.data, 'body', 0, 500)
+          && request.resource.data.at is int
+          && hhStr(request.resource.data, 'url', 1, 2000)
+          && request.resource.data.url.matches('https://.*')
+          && (request.resource.data.recipients == 'all'
+            || (request.resource.data.recipients is list
+              && request.resource.data.recipients.size() >= 1
+              && request.resource.data.recipients.size() <= 12))
+          && (!('ref' in request.resource.data) || hhStr(request.resource.data, 'ref', 0, 200))
+          && request.resource.data.sent is bool
+          && (!('sentAt' in request.resource.data) || request.resource.data.sentAt is int)
+          && request.resource.data.createdAt is int
+          && hhStr(request.resource.data, 'by', 0, 120);
+      }
+
+      // Each member's Web Push subscriptions, one per device and app (@huishouden/pwa-kit/push;
+      // fields match PUSH_SUBSCRIPTION_FIELDS there). A member sees and manages only their own;
+      // the keys are read only by the shared sender (huishouden/notify, a service account).
+      match /pushSubscriptions/{subId} {
+        allow read, delete: if isMember() && resource.data.email == myEmail();
+        allow create, update: if isMember()
+          && (resource == null || resource.data.email == myEmail())
+          && request.resource.data.keys().hasOnly(['email', 'app', 'endpoint', 'keys', 'ua', 'createdAt'])
+          && request.resource.data.email == myEmail()
+          && hhStr(request.resource.data, 'app', 1, 40)
+          && hhStr(request.resource.data, 'endpoint', 1, 1000)
+          && request.resource.data.endpoint.matches('https://.*')
+          && request.resource.data['keys'] is map
+          && request.resource.data['keys'].keys().hasOnly(['p256dh', 'auth'])
+          && hhStr(request.resource.data['keys'], 'p256dh', 1, 200)
+          && hhStr(request.resource.data['keys'], 'auth', 1, 100)
+          && (!('ua' in request.resource.data) || hhStr(request.resource.data, 'ua', 0, 300))
+          && request.resource.data.createdAt is int;
+      }
+
       match /favorites/{favoriteId} {
         allow read, write: if isMember();
       }

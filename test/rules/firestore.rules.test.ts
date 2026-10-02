@@ -332,6 +332,102 @@ describe('household contents', () => {
     await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/homeWarranties/w1')));
   });
 
+  describe('reminders', () => {
+    const reminder = {
+      app: 'pet',
+      title: 'Give Biscuit 1 tablet',
+      body: 'With food',
+      at: 1700000000000,
+      url: 'https://example-pet.web.app/meds/m1',
+      recipients: 'all',
+      ref: 'course:m1',
+      sent: false,
+      createdAt: 1700000000000,
+      by: ALICE,
+    };
+
+    it('lets members create, read, update and delete reminders', async () => {
+      await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/reminders/r1'), reminder));
+      await assertSucceeds(getDoc(doc(as(BOB), 'households/h1/reminders/r1')));
+      await assertSucceeds(getDocs(collection(as(BOB), 'households/h1/reminders')));
+      await assertSucceeds(updateDoc(doc(as(BOB), 'households/h1/reminders/r1'), { at: 1700000600000, recipients: [BOB] }));
+      await assertSucceeds(updateDoc(doc(as(ALICE), 'households/h1/reminders/r1'), { sent: true, sentAt: 1700000600000 }));
+      await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/reminders/r1')));
+    });
+
+    it('keeps non-members out', async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'households/h1/reminders/r1'), reminder);
+      });
+      const db = as(MALLORY);
+      await assertFails(getDoc(doc(db, 'households/h1/reminders/r1')));
+      await assertFails(getDocs(collection(db, 'households/h1/reminders')));
+      await assertFails(setDoc(doc(db, 'households/h1/reminders/r2'), reminder));
+      await assertFails(deleteDoc(doc(db, 'households/h1/reminders/r1')));
+    });
+
+    it('accepts only the known reminder fields and shapes', async () => {
+      const fails = (data: Record<string, unknown>) => assertFails(setDoc(doc(as(ALICE), 'households/h1/reminders/r3'), data));
+      await fails({ ...reminder, extra: true });
+      await fails({ ...reminder, url: 'javascript:alert(1)' });
+      await fails({ ...reminder, recipients: 'everyone' });
+      await fails({ ...reminder, recipients: [] });
+      await fails({ ...reminder, recipients: Array.from({ length: 13 }, (_, i) => `p${i}@example.com`) });
+      await fails({ ...reminder, at: '2031-05-01' });
+      await fails({ ...reminder, title: '' });
+      const { sent: _sent, ...withoutSent } = reminder;
+      await fails(withoutSent);
+      await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/reminders/r4'), { ...reminder, recipients: [ALICE, BOB], body: '' }));
+    });
+  });
+
+  describe('push subscriptions', () => {
+    const sub = (email: string) => ({
+      email,
+      app: 'pet',
+      endpoint: 'https://push.example.com/send/abc123',
+      keys: { p256dh: 'BExamplePublicKey', auth: 'ExampleAuth' },
+      ua: 'Example Browser',
+      createdAt: 1700000000000,
+    });
+
+    it('lets a member save, list and delete their own subscription', async () => {
+      const db = as(ALICE);
+      await assertSucceeds(setDoc(doc(db, 'households/h1/pushSubscriptions/s1'), sub(ALICE)));
+      await assertSucceeds(setDoc(doc(db, 'households/h1/pushSubscriptions/s1'), { ...sub(ALICE), createdAt: 1700000600000 }));
+      await assertSucceeds(getDoc(doc(db, 'households/h1/pushSubscriptions/s1')));
+      await assertSucceeds(getDocs(query(collection(db, 'households/h1/pushSubscriptions'), where('email', '==', ALICE))));
+      await assertSucceeds(deleteDoc(doc(db, 'households/h1/pushSubscriptions/s1')));
+    });
+
+    it("blocks saving a subscription under someone else's email", async () => {
+      await assertFails(setDoc(doc(as(ALICE), 'households/h1/pushSubscriptions/s2'), sub(BOB)));
+      await assertFails(setDoc(doc(as(MALLORY), 'households/h1/pushSubscriptions/s3'), sub(MALLORY)));
+    });
+
+    it("hides a member's subscription and keys from the other members", async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'households/h1/pushSubscriptions/s1'), sub(ALICE));
+      });
+      const db = as(BOB);
+      await assertFails(getDoc(doc(db, 'households/h1/pushSubscriptions/s1')));
+      await assertFails(getDocs(query(collection(db, 'households/h1/pushSubscriptions'), where('email', '==', ALICE))));
+      await assertFails(getDocs(collection(db, 'households/h1/pushSubscriptions')));
+      await assertFails(deleteDoc(doc(db, 'households/h1/pushSubscriptions/s1')));
+      await assertFails(setDoc(doc(db, 'households/h1/pushSubscriptions/s1'), sub(BOB)));
+    });
+
+    it('accepts only the known subscription fields and keys', async () => {
+      const fails = (data: Record<string, unknown>) => assertFails(setDoc(doc(as(ALICE), 'households/h1/pushSubscriptions/s4'), data));
+      await fails({ ...sub(ALICE), extra: true });
+      await fails({ ...sub(ALICE), keys: { p256dh: 'x', auth: 'y', private: 'z' } });
+      await fails({ ...sub(ALICE), keys: { p256dh: 'x' } });
+      await fails({ ...sub(ALICE), keys: 'x' });
+      await fails({ ...sub(ALICE), endpoint: 'http://push.example.com/x' });
+      await fails({ ...sub(ALICE), createdAt: 'now' });
+    });
+  });
+
   it('rejects items without a name', async () => {
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/items/i3'), { name: '', listId: 'groceries', completed: false }));
   });
