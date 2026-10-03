@@ -176,6 +176,9 @@ service cloud.firestore {
           && request.resource.data.name.size() <= 200
           && request.resource.data.listId is string
           && request.resource.data.completed is bool
+          // Cancelled (from Tasks or the portal's To-do list): kept, ticked off, in the history.
+          && (!('cancelledAt' in request.resource.data) || request.resource.data.cancelledAt is int)
+          && (!('cancelledBy' in request.resource.data) || hhStr(request.resource.data, 'cancelledBy', 0, 254))
           && (!('subtasks' in request.resource.data) || (request.resource.data.subtasks is list && request.resource.data.subtasks.size() <= 50))
           // Ticking a step off someone else's item keeps its steps (Tasks rewrites the whole list).
           && (staff() || request.method == 'create' || addedByMe()
@@ -316,6 +319,9 @@ service cloud.firestore {
         allow read: if isMember();
         allow delete: if canRemove();
         allow create, update: if writer(['done', 'order'])
+          // Skipped: not needed after all, kept in the list's history.
+          && (!('skipped' in request.resource.data) || request.resource.data.skipped is bool)
+          && (!('skippedAt' in request.resource.data) || request.resource.data.skippedAt is int)
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 200;
@@ -368,7 +374,9 @@ service cloud.firestore {
         allow read: if isMember();
         allow delete: if canRemove();
         allow create, update: if writer(['lastDate', 'lastOdometer', 'updatedAt'])
-          && request.resource.data.keys().hasOnly(['vehicleId', 'name', 'everyMonths', 'everyDistance', 'lastDate', 'lastOdometer', 'notes', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['vehicleId', 'name', 'everyMonths', 'everyDistance', 'lastDate', 'lastOdometer', 'notes', 'pausedAt', 'createdAt', 'updatedAt', 'by'])
+          // Paused: no longer comes due until resumed.
+          && carInt(request.resource.data, 'pausedAt', 0, 9007199254740991)
           && carName(request.resource.data, 'vehicleId', 128)
           && carName(request.resource.data, 'name', 80)
           && ('everyMonths' in request.resource.data || 'everyDistance' in request.resource.data)
@@ -397,7 +405,9 @@ service cloud.firestore {
         allow read: if isMember();
         allow delete: if canRemove();
         allow create, update: if writer(['dueDate', 'updatedAt'])
-          && request.resource.data.keys().hasOnly(['vehicleId', 'kind', 'name', 'dueDate', 'everyMonths', 'notes', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['vehicleId', 'kind', 'name', 'dueDate', 'everyMonths', 'notes', 'closedAt', 'createdAt', 'updatedAt', 'by'])
+          // Closed (handled, not renewing): no longer comes due, kept in the car's history.
+          && carInt(request.resource.data, 'closedAt', 0, 9007199254740991)
           && carStr(request.resource.data, 'vehicleId', 128)
           && request.resource.data.kind in ['registration', 'insurance', 'inspection', 'toll', 'other']
           && carName(request.resource.data, 'name', 80)
@@ -488,7 +498,9 @@ service cloud.firestore {
         allow read: if isMember();
         allow delete: if canRemove();
         allow create, update: if writer(['due', 'lastDone', 'updatedAt'])
-          && request.resource.data.keys().hasOnly(['title', 'category', 'schedule', 'due', 'lastDone', 'contactId', 'notes', 'calendarEventId', 'calendarLink', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['title', 'category', 'schedule', 'due', 'lastDone', 'contactId', 'notes', 'calendarEventId', 'calendarLink', 'pausedAt', 'createdAt', 'updatedAt', 'by'])
+          // Paused: kept, no longer comes due until resumed.
+          && (!('pausedAt' in request.resource.data) || request.resource.data.pausedAt is int)
           && request.resource.data.title is string
           && request.resource.data.title.size() > 0
           && request.resource.data.title.size() <= 120
@@ -613,8 +625,10 @@ service cloud.firestore {
         allow create, update: if isMember()
           && prepId.matches('[A-Za-z0-9-]{1,100}_[0-9]{4}-[0-9]{2}-[0-9]{2}')
           && exists(/databases/$(database)/documents/households/$(householdId)/homeEvents/$(prepId.split('_')[0]))
-          && request.resource.data.keys().hasOnly(['done', 'at', 'by'])
+          && request.resource.data.keys().hasOnly(['done', 'skipped', 'at', 'by'])
           && request.resource.data.done == true
+          // Skipped rather than done: not needed this time.
+          && (!('skipped' in request.resource.data) || request.resource.data.skipped is bool)
           && request.resource.data.at is int
           && signsAsMe();
       }
@@ -763,7 +777,9 @@ service cloud.firestore {
         allow read: if isMember();
         allow delete: if canRemove();
         allow create, update: if writer(['lastDoneAt', 'due', 'updatedAt'])
-          && request.resource.data.keys().hasOnly(['petId', 'kind', 'title', 'every', 'unit', 'due', 'lastDoneAt', 'notes', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['petId', 'kind', 'title', 'every', 'unit', 'due', 'lastDoneAt', 'notes', 'dismissedAt', 'createdAt', 'updatedAt', 'by'])
+          // Dismissed: no longer comes due, kept in the pet's history.
+          && petOptInt(request.resource.data, 'dismissedAt')
           && petStr(request.resource.data, 'petId', 1, 128)
           && request.resource.data.kind in ['flea-tick', 'heartworm', 'vaccine', 'deworming', 'medication', 'other']
           // Ticking off a medicine reminder records it given: never by a kid.
@@ -923,7 +939,9 @@ service cloud.firestore {
         allow create, update: if writer([])
           && petStr(request.resource.data, 'courseId', 1, 128)
           && mayGive(request.resource.data.courseId)
-          && request.resource.data.keys().hasOnly(['petId', 'courseId', 'slot', 'at', 'by', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['petId', 'courseId', 'slot', 'at', 'skipped', 'by', 'createdAt'])
+          // Skipped rather than given.
+          && (!('skipped' in request.resource.data) || request.resource.data.skipped is bool)
           && petStr(request.resource.data, 'petId', 1, 128)
           && petStr(request.resource.data, 'courseId', 1, 128)
           && request.resource.data.slot is int
@@ -1049,6 +1067,47 @@ service cloud.firestore {
           && request.resource.data.url.matches('^https://.*')
           && (!('who' in request.resource.data) || hhStr(request.resource.data, 'who', 0, 60))
           && (!('status' in request.resource.data) || request.resource.data.status in ['upcoming', 'overdue', 'done'])
+          && request.resource.data.updatedAt is int
+          && request.resource.data.by == myEmail();
+      }
+
+      // The household's to-do list (@huishouden/pwa-kit/todos; fields match TODO_FIELDS and
+      // TODO_ACTION_FIELDS there): every app's open, actionable things, `<app>:<ref>`, kept in step
+      // like the agenda by whichever device opens an app. `done` and `cancel` are lists of writes
+      // the portal makes as the member who taps them, so each is checked by its own collection's
+      // rules; rules have no loops, so here only their shape is checked, and the portal refuses
+      // writes outside the item's app (todoOpsAllowed).
+      function todoAction(a) {
+        return a is map
+          && a.keys().hasOnly(['label', 'ops', 'roles', 'owner', 'emails'])
+          && a.keys().hasAll(['label', 'ops', 'roles'])
+          && hhStr(a, 'label', 1, 24)
+          && a.ops is list && a.ops.size() >= 1 && a.ops.size() <= 8
+          && a.roles is list && a.roles.size() <= 4 && a.roles.hasOnly(['admin', 'member', 'helper', 'kid'])
+          && (!('owner' in a) || a.owner is bool)
+          && (!('emails' in a) || hhEmails(a.emails));
+      }
+
+      match /todos/{todoId} {
+        allow read: if readable();
+        allow delete: if openDerivedRemoval();
+        allow create, update: if openDerived()
+          && request.resource.data.keys().hasOnly(['app', 'ref', 'title', 'detail', 'createdAt', 'due', 'who', 'url', 'status', 'private', 'owner', 'done', 'cancel', 'updatedAt', 'by'])
+          && hhStr(request.resource.data, 'app', 1, 40)
+          && request.resource.data.app.matches('[a-z]{1,40}')
+          && todoId.matches(request.resource.data.app + ':.{1,240}')
+          && hhStr(request.resource.data, 'ref', 1, 200)
+          && hhStr(request.resource.data, 'title', 1, 120)
+          && (!('detail' in request.resource.data) || hhStr(request.resource.data, 'detail', 0, 200))
+          && request.resource.data.createdAt is int
+          && (!('due' in request.resource.data) || request.resource.data.due is int)
+          && (!('who' in request.resource.data) || hhStr(request.resource.data, 'who', 0, 60))
+          && hhStr(request.resource.data, 'url', 9, 2000)
+          && request.resource.data.url.matches('^https://.*')
+          && request.resource.data.status in ['open', 'info']
+          && (!('owner' in request.resource.data) || hhStr(request.resource.data, 'owner', 0, 254))
+          && (!('done' in request.resource.data) || todoAction(request.resource.data.done))
+          && (!('cancel' in request.resource.data) || todoAction(request.resource.data.cancel))
           && request.resource.data.updatedAt is int
           && request.resource.data.by == myEmail();
       }

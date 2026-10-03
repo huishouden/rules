@@ -55,6 +55,13 @@ it doesn't name is a member, except the household's creator (first in `members`)
 - `private: true` hides a contact, appointment, agenda item or reminder from helpers and kids. A
   record without the flag is private to them until it is written with `private: false`, so their
   queries ask for `private == false`; the apps write the flag on every save.
+- The to-do list (`todos`) is kept in step the same way. Each item's Done and Cancel are writes the
+  portal makes as the member who taps them, so each is checked by its own collection's rules here.
+  Cancelled things stay in their app's history: a cancelled to-do (`cancelledAt`), a paused Home job
+  or car service (`pausedAt`), a closed car renewal (`closedAt`), a skipped baby checklist item, Home
+  prep task or pet medicine dose (`skipped`), a dismissed pet reminder (`dismissedAt`), a skipped
+  bill (`dismissed`). Setting them changes the record, so helpers and kids may do it only on what
+  they added.
 - Reminders and agenda items are kept in step by whichever device opens an app, so helpers and kids
   may write the open ones, signed by them, linking only into the apps and never re-arming a sent
   reminder. Spending's and Bills' are always private, whoever writes them.

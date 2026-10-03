@@ -708,3 +708,118 @@ describe('role attacks', () => {
     await assertFails(getDocs(query(collection(unverified, 'households/h1/items'))));
   });
 });
+
+describe('to-do list', () => {
+  const todo = (by: string, extra: Record<string, unknown> = {}) => ({
+    app: 'tasks', ref: 'item:i1', title: 'Fix the porch light', createdAt: 1700000000000, url: 'https://huishouden-piekstra.web.app/tasks/?item=i1',
+    status: 'open', private: false, owner: ALICE, updatedAt: 1, by,
+    done: { label: 'Done', roles: ['admin', 'member', 'helper', 'kid'], ops: [{ col: 'items', id: 'i1', data: { completed: true, completedAt: '$now' }, merge: true }] },
+    cancel: { label: 'Cancel', roles: ['admin', 'member'], owner: true, ops: [{ col: 'items', id: 'i1', data: { completed: true, cancelledAt: '$now', cancelledBy: '$me' }, merge: true }] },
+    ...extra,
+  });
+  const path = (id = 'tasks:item:i1') => `households/h1/todos/${id}`;
+  beforeEach(async () => {
+    await seed(path(), todo(ALICE));
+    await seed(path('baby:appt:a1'), todo(ALICE, { app: 'baby', ref: 'appt:a1', private: true }));
+    await seed(path('bills:bill:b1'), todo(ALICE, { app: 'bills', ref: 'bill:b1', private: true }));
+  });
+
+  it('lets admins and members read every item; helpers and kids only open ones, asking for them; outsiders nothing', async () => {
+    for (const who of [ALICE, BOB]) await assertSucceeds(getDocs(collection(as(who), 'households/h1/todos')));
+    for (const who of [HELEN, KIM]) {
+      await assertSucceeds(getDoc(doc(as(who), path())));
+      await assertFails(getDoc(doc(as(who), path('baby:appt:a1'))));
+      await assertFails(getDoc(doc(as(who), path('bills:bill:b1'))));
+      await assertSucceeds(getDocs(query(collection(as(who), 'households/h1/todos'), where('private', '==', false))));
+      await assertFails(getDocs(collection(as(who), 'households/h1/todos')));
+    }
+    await assertFails(getDoc(doc(as(MALLORY), path())));
+    await assertFails(getDocs(query(collection(as(MALLORY), 'households/h1/todos'), where('private', '==', false))));
+  });
+
+  it('lets members publish and remove items, signed by them; outsiders can’t', async () => {
+    await assertSucceeds(setDoc(doc(as(BOB), path('tasks:item:i2')), todo(BOB, { ref: 'item:i2' })));
+    await assertSucceeds(deleteDoc(doc(as(BOB), path('tasks:item:i2'))));
+    await assertFails(setDoc(doc(as(BOB), path('tasks:item:i3')), todo(ALICE, { ref: 'item:i3' })));
+    await assertFails(setDoc(doc(as(MALLORY), path('tasks:item:i4')), todo(MALLORY, { ref: 'item:i4' })));
+    await assertFails(deleteDoc(doc(as(MALLORY), path())));
+  });
+
+  it('lets helpers and kids keep open items in step (and restore one on Undo), never private or money ones', async () => {
+    await assertSucceeds(setDoc(doc(as(HELEN), path()), todo(HELEN, { title: 'Fix the porch lights' })));
+    await assertSucceeds(deleteDoc(doc(as(KIM), path())));
+    await assertSucceeds(setDoc(doc(as(KIM), path()), todo(KIM)));
+    await assertFails(setDoc(doc(as(HELEN), path('baby:appt:a1')), todo(HELEN, { app: 'baby', ref: 'appt:a1' })));
+    await assertFails(deleteDoc(doc(as(HELEN), path('baby:appt:a1'))));
+    await assertFails(deleteDoc(doc(as(HELEN), path('bills:bill:b1'))));
+    await assertFails(setDoc(doc(as(HELEN), path('baby:appt:a2')), todo(HELEN, { app: 'baby', ref: 'appt:a2', private: true })));
+    await assertFails(setDoc(doc(as(HELEN), path('bills:bill:b2')), todo(HELEN, { app: 'bills', ref: 'bill:b2', private: true })));
+    await assertFails(setDoc(doc(as(HELEN), path('tasks:item:i5')), todo(HELEN, { url: 'https://evil.example.com/' })));
+  });
+
+  it('keeps Bills’ items private whoever writes them', async () => {
+    await assertFails(setDoc(doc(as(BOB), path('bills:bill:b3')), todo(BOB, { app: 'bills', ref: 'bill:b3', private: false })));
+    await assertSucceeds(setDoc(doc(as(BOB), path('bills:bill:b3')), todo(BOB, { app: 'bills', ref: 'bill:b3', private: true })));
+  });
+
+  it('checks the shape: id under its app, exact fields, actions with a label, 1–8 ops and known roles', async () => {
+    const bob = (id: string, extra: Record<string, unknown>) => setDoc(doc(as(BOB), path(id)), todo(BOB, extra));
+    await assertFails(bob('home:item:i1', {}));
+    await assertFails(bob('tasks:item:i1', { extra: 1 }));
+    await assertFails(bob('tasks:item:i1', { status: 'done' }));
+    await assertFails(bob('tasks:item:i1', { createdAt: 'yesterday' }));
+    await assertFails(bob('tasks:item:i1', { url: 'javascript:alert(1)' }));
+    await assertFails(bob('tasks:item:i1', { title: '' }));
+    await assertFails(bob('tasks:item:i1', { done: { label: '', roles: [], ops: [{ col: 'items', id: 'i1', data: null }] } }));
+    await assertFails(bob('tasks:item:i1', { done: { label: 'Done', roles: ['admin'], ops: [] } }));
+    await assertFails(bob('tasks:item:i1', { done: { label: 'Done', roles: ['owner'], ops: [{ col: 'items', id: 'i1', data: null }] } }));
+    await assertFails(bob('tasks:item:i1', { done: { label: 'Done', roles: ['admin'], ops: Array.from({ length: 9 }, () => ({ col: 'items', id: 'i1', data: null })) } }));
+    await assertFails(bob('tasks:item:i1', { done: { label: 'Done', roles: ['admin'], emails: ['Not an email'], ops: [{ col: 'items', id: 'i1', data: null }] } }));
+    await assertFails(bob('groceries:list', { app: 'groceries', ref: 'list', status: 'info', done: null }));
+    const { done: _d, cancel: _c, owner: _o, ...summary } = todo(BOB, { app: 'groceries', ref: 'list', status: 'info', due: 5, who: 'Everyone', detail: '6 on the list' });
+    await assertSucceeds(setDoc(doc(as(BOB), path('groceries:list')), summary));
+  });
+});
+
+describe('cancelling from the To-do list', () => {
+  const cases: { col: string; doc: (by: string) => Record<string, unknown>; cancel: Record<string, unknown>; bad: Record<string, unknown> }[] = [
+    { col: 'items', doc: (by) => ({ name: 'Fix the porch light', listId: 'chores', completed: false, by }), cancel: { completed: true, completedAt: 5, cancelledAt: 5, cancelledBy: BOB }, bad: { cancelledAt: 'now' } },
+    { col: 'babyChecklists', doc: (by) => ({ list: 'Paperwork', text: 'Book the pediatrician', done: false, order: 1, createdAt: 1, by }), cancel: { skipped: true, skippedAt: 5 }, bad: { skipped: 'yes' } },
+    { col: 'homeTasks', doc: (by) => ({ title: 'Change filter', category: 'hvac', schedule: { kind: 'after-done', every: 3, unit: 'month' }, due: '2031-05-01', createdAt: 1, by }), cancel: { pausedAt: 5, updatedAt: 5 }, bad: { pausedAt: true } },
+    { col: 'carServiceItems', doc: (by) => ({ vehicleId: 'v1', name: 'Oil change', everyMonths: 6, createdAt: 1, by }), cancel: { pausedAt: 5, updatedAt: 5 }, bad: { pausedAt: -1 } },
+    { col: 'carRenewals', doc: (by) => ({ vehicleId: 'v1', kind: 'registration', name: 'Registration', dueDate: '2031-05-01', everyMonths: 12, createdAt: 1, by }), cancel: { closedAt: 5, updatedAt: 5 }, bad: { closedAt: 'soon' } },
+    { col: 'petReminders', doc: (by) => ({ petId: 'p1', kind: 'vaccine', title: 'Rabies booster', due: '2031-05-12', createdAt: 1, by }), cancel: { dismissedAt: 5, updatedAt: 5 }, bad: { dismissedAt: 'today' } },
+  ];
+  for (const c of cases) {
+    describe(c.col, () => {
+      const theirs = `households/h1/${c.col}/theirs`;
+      beforeEach(() => seed(theirs, c.doc(ALICE)));
+      it('admins and members cancel anyone’s; helpers and kids only their own', async () => {
+        await assertSucceeds(setDoc(doc(as(BOB), theirs), c.cancel, { merge: true }));
+        await seed(theirs, c.doc(ALICE));
+        await assertFails(setDoc(doc(as(HELEN), theirs), c.cancel, { merge: true }));
+        await assertFails(setDoc(doc(as(KIM), theirs), c.cancel, { merge: true }));
+        const mine = `households/h1/${c.col}/mine`;
+        await seed(mine, c.doc(HELEN));
+        await assertSucceeds(setDoc(doc(as(HELEN), mine), c.cancel, { merge: true }));
+      });
+      it('refuses a cancel field of the wrong type', async () => {
+        await assertFails(setDoc(doc(as(ALICE), theirs), c.bad, { merge: true }));
+      });
+    });
+  }
+
+  it('Home: anyone skips the thing to do before an event, in their own name', async () => {
+    await seed('households/h1/homeEvents/e1', { title: 'Garbage pickup', kind: 'trash', rule: { freq: 'week', every: 1, start: '2031-01-02' }, createdAt: 1, by: ALICE });
+    await assertSucceeds(setDoc(doc(as(KIM), 'households/h1/homeEventPrep/e1_2031-01-09'), { done: true, skipped: true, at: 5, by: KIM }));
+    await assertFails(setDoc(doc(as(KIM), 'households/h1/homeEventPrep/e1_2031-01-16'), { done: true, skipped: 'yes', at: 5, by: KIM }));
+  });
+
+  it('Pet: a helper skips a dose they may give; a kid never', async () => {
+    await seed('households/h1/petMedCourses/c1', { petId: 'p1', name: 'Carprofen', dose: '1 tablet', timesPerDay: 1, times: ['08:00'], startDate: '2031-05-01', days: 5, withFood: true, createdAt: 1, by: ALICE });
+    const dose = (by: string) => ({ petId: 'p1', courseId: 'c1', slot: 0, at: 5, skipped: true, by, createdAt: 5 });
+    await assertSucceeds(setDoc(doc(as(HELEN), 'households/h1/petMedDoses/c1_2031-05-02_0'), dose(HELEN)));
+    await assertFails(setDoc(doc(as(KIM), 'households/h1/petMedDoses/c1_2031-05-03_0'), dose(KIM)));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/petMedDoses/c1_2031-05-04_0'), { ...dose(BOB), skipped: 1 }));
+  });
+});
