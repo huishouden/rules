@@ -1191,7 +1191,7 @@ service cloud.firestore {
 
         // A medicine: scheduled at `times` on its days (every `everyDays`, or on `rule`), or as needed
         // with `minHours` between doses and at most `maxPerDay`. Readers may also mark a refill
-        // ordered (`refillOrderedAt`, the household to-do's "Ordered").
+        // ordered (`refillOrderedAt`, the household to-do's "Ordered"). `personId` repeats the path's.
         match /meds/{medId} {
           allow read: if healthReader(person());
           allow delete: if healthKeeper(person());
@@ -1200,7 +1200,8 @@ service cloud.firestore {
             && request.resource.data.get('refillOrderedAt', 0) is int
             && request.resource.data.get('updatedAt', 0) is int;
           allow create, update: if healthKeeper(person())
-            && request.resource.data.keys().hasOnly(['name', 'strength', 'dose', 'doseAmount', 'doseUnit', 'asNeeded', 'times', 'everyDays', 'rule', 'minHours', 'maxPerDay', 'withFood', 'startDate', 'endDate', 'prescriberId', 'pharmacyId', 'refills', 'supply', 'supplyAt', 'refillOrderedAt', 'escalateMinutes', 'remind', 'notes', 'createdAt', 'updatedAt', 'by'])
+            && request.resource.data.get('personId', '') == personId
+            && request.resource.data.keys().hasOnly(['personId', 'name', 'strength', 'dose', 'doseAmount', 'doseUnit', 'asNeeded', 'times', 'everyDays', 'rule', 'minHours', 'maxPerDay', 'withFood', 'startDate', 'endDate', 'prescriberId', 'pharmacyId', 'refills', 'supply', 'supplyAt', 'refillOrderedAt', 'escalateMinutes', 'remind', 'notes', 'createdAt', 'updatedAt', 'by'])
             && hhStr(request.resource.data, 'name', 1, 80)
             && optString(request.resource.data, 'strength', 40)
             && optString(request.resource.data, 'dose', 80)
@@ -1238,7 +1239,8 @@ service cloud.firestore {
           allow create, update: if healthReader(person())
             && (request.method == 'create' || healthKeeper(person()) || resource.data.by == myEmail())
             && (request.method == 'create' ? request.resource.data.by == myEmail() : request.resource.data.by == resource.data.by)
-            && request.resource.data.keys().hasOnly(['medId', 'slot', 'at', 'status', 'note', 'by', 'createdAt'])
+            && request.resource.data.get('personId', '') == personId
+            && request.resource.data.keys().hasOnly(['personId', 'medId', 'slot', 'at', 'status', 'note', 'by', 'createdAt'])
             && hhStr(request.resource.data, 'medId', 1, 128)
             && (!('slot' in request.resource.data) || (request.resource.data.slot is string
               && request.resource.data.slot.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}')))

@@ -36,10 +36,10 @@ const person = (over: Record<string, unknown> = {}) => ({
   name: 'Nan', carers: [BOB, HELEN, KIM], readers: [BOB, HELEN, KIM], allergies: 'Penicillin', createdAt: 1, by: ALICE, ...over,
 });
 const med = (by: string, over: Record<string, unknown> = {}) => ({
-  name: 'Lisinopril', strength: '10 mg', dose: '1 tablet', doseAmount: 1, doseUnit: 'tablet', asNeeded: false, times: ['08:00', '20:00'],
+  personId: 'nan', name: 'Lisinopril', strength: '10 mg', dose: '1 tablet', doseAmount: 1, doseUnit: 'tablet', asNeeded: false, times: ['08:00', '20:00'],
   everyDays: 1, withFood: true, startDate: '2031-01-05', refills: 2, supply: 30, supplyAt: 1, escalateMinutes: 30, remind: true, createdAt: 1, by, ...over,
 });
-const dose = (by: string, over: Record<string, unknown> = {}) => ({ medId: 'm1', slot: '2031-01-05T08:00', at: 5, status: 'given', by, createdAt: 5, ...over });
+const dose = (by: string, over: Record<string, unknown> = {}) => ({ personId: 'nan', medId: 'm1', slot: '2031-01-05T08:00', at: 5, status: 'given', by, createdAt: 5, ...over });
 
 async function seed(path: string, data: Record<string, unknown>) {
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -132,6 +132,10 @@ describe('health: keeping people and medicines', () => {
     await assertFails(setDoc(doc(db, `${P}/meds/x`), med(ALICE, { startDate: 'soon' })));
     await assertFails(setDoc(doc(db, `${P}/meds/x`), med(ALICE, { doseAmount: 0 })));
     await assertFails(setDoc(doc(db, `${P}/meds/x`), med(ALICE, { remind: 'yes' })));
+    // personId must be the person in the path.
+    await assertFails(setDoc(doc(db, `${P}/meds/x`), med(ALICE, { personId: 'someone' })));
+    const { personId: _p, ...noPerson } = med(ALICE);
+    await assertFails(setDoc(doc(db, `${P}/meds/x`), noPerson));
   });
 
   it('photo: only `avatar`, by admins and member carers', async () => {
@@ -155,6 +159,9 @@ describe('health: recording doses', () => {
     await assertFails(setDoc(doc(as(MALLORY), `${P}/doses/d5`), dose(MALLORY)));
     await assertFails(setDoc(doc(as(BOB), `${P}/doses/d6`), dose(BOB, { status: 'maybe' })));
     await assertFails(setDoc(doc(as(BOB), `${P}/doses/d6`), dose(BOB, { slot: 'tomorrow' })));
+    await assertFails(setDoc(doc(as(BOB), `${P}/doses/d6`), dose(BOB, { personId: 'someone' })));
+    const { personId: _p, ...noPerson } = dose(BOB);
+    await assertFails(setDoc(doc(as(BOB), `${P}/doses/d6`), noPerson));
   });
 
   it('a helper changes and removes only their own; keepers any, and `by` stays', async () => {
