@@ -1112,6 +1112,224 @@ service cloud.firestore {
           && request.resource.data.by == myEmail();
       }
 
+      // Health (huishouden/health): people's medicines. Everything about a person is readable only by
+      // the household's admins and the members in the person's `readers` (their carers, and the
+      // person themself when they are a member), never by kids, nor by members who don't care for
+      // them. Admins and member carers keep the person and their medicines; helper carers read and
+      // record doses. A person's medicines, doses and photo live under the person, so every check
+      // reads the person document by its path (list queries included).
+      function healthAdmin() {
+        return isMember() && role() == 'admin';
+      }
+
+      function healthReader(p) {
+        return healthAdmin() || (isMember() && role() in ['member', 'helper'] && myEmail() in p.readers);
+      }
+
+      function healthKeeper(p) {
+        return healthAdmin() || (isMember() && role() == 'member' && myEmail() in p.readers);
+      }
+
+      function healthYmd(d, k) {
+        return d[k] is string && d[k].matches('[0-9]{4}-[0-9]{2}-[0-9]{2}');
+      }
+
+      function healthNum(d, k, lo, hi) {
+        return !(k in d) || (d[k] is number && d[k] >= lo && d[k] <= hi);
+      }
+
+      function healthInt(d, k, lo, hi) {
+        return !(k in d) || (d[k] is int && d[k] >= lo && d[k] <= hi);
+      }
+
+      // "HH:MM" times, up to six, checked as one string (rules have no loops).
+      function healthTimes(l) {
+        let one = '([01][0-9]|2[0-3]):[0-5][0-9]';
+        return l is list && l.size() <= 6
+          && (l.size() == 0 || (l.join('|').matches(one + '([|]' + one + ')*') && l.join('|').split('[|]') == l));
+      }
+
+      function healthAuthored(d) {
+        return d.createdAt is int && healthInt(d, 'updatedAt', 0, 9999999999999) && d.by == myEmail();
+      }
+
+      match /healthPeople/{personId} {
+        allow read: if healthReader(resource.data);
+        allow delete: if healthKeeper(resource.data);
+        allow create, update: if (healthAdmin()
+            || (isMember() && role() == 'member' && myEmail() in request.resource.data.readers
+              && (request.method == 'create' || myEmail() in resource.data.readers)))
+          && request.resource.data.keys().hasOnly(['name', 'birthDate', 'email', 'carers', 'readers', 'allergies', 'notes', 'createdAt', 'updatedAt', 'by'])
+          && hhStr(request.resource.data, 'name', 1, 60)
+          && (!('birthDate' in request.resource.data) || healthYmd(request.resource.data, 'birthDate'))
+          && (!('email' in request.resource.data) || (hhStr(request.resource.data, 'email', 3, 254)
+            && request.resource.data.email == request.resource.data.email.lower()
+            && request.resource.data.email in request.resource.data.readers))
+          && hhEmails(request.resource.data.carers)
+          && hhEmails(request.resource.data.readers)
+          && request.resource.data.readers.hasAll(request.resource.data.carers)
+          && optString(request.resource.data, 'allergies', 200)
+          && optString(request.resource.data, 'notes', 500)
+          && healthAuthored(request.resource.data);
+
+        function person() {
+          return get(/databases/$(database)/documents/households/$(householdId)/healthPeople/$(personId)).data;
+        }
+
+        // One small avatar photo (@huishouden/pwa-kit/photo), `avatar`.
+        match /photo/{photoId} {
+          allow read: if healthReader(person());
+          allow delete: if healthKeeper(person());
+          allow create, update: if photoId == 'avatar' && healthKeeper(person())
+            && request.resource.data.keys().hasOnly(['data', 'updatedAt', 'by'])
+            && request.resource.data.data is string
+            && request.resource.data.data.size() <= 100000
+            && request.resource.data.data.matches('data:image/(webp|jpeg);base64,[A-Za-z0-9+/]+={0,2}')
+            && request.resource.data.updatedAt is int
+            && request.resource.data.by == myEmail();
+        }
+
+        // A medicine: scheduled at `times` on its days (every `everyDays`, or on `rule`), or as needed
+        // with `minHours` between doses and at most `maxPerDay`. Readers may also mark a refill
+        // ordered (`refillOrderedAt`, the household to-do's "Ordered").
+        match /meds/{medId} {
+          allow read: if healthReader(person());
+          allow delete: if healthKeeper(person());
+          allow update: if healthReader(person())
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['refillOrderedAt', 'updatedAt'])
+            && request.resource.data.get('refillOrderedAt', 0) is int
+            && request.resource.data.get('updatedAt', 0) is int;
+          allow create, update: if healthKeeper(person())
+            && request.resource.data.keys().hasOnly(['name', 'strength', 'dose', 'doseAmount', 'doseUnit', 'asNeeded', 'times', 'everyDays', 'rule', 'minHours', 'maxPerDay', 'withFood', 'startDate', 'endDate', 'prescriberId', 'pharmacyId', 'refills', 'supply', 'supplyAt', 'refillOrderedAt', 'escalateMinutes', 'remind', 'notes', 'createdAt', 'updatedAt', 'by'])
+            && hhStr(request.resource.data, 'name', 1, 80)
+            && optString(request.resource.data, 'strength', 40)
+            && optString(request.resource.data, 'dose', 80)
+            && (!('doseAmount' in request.resource.data) || (request.resource.data.doseAmount is number
+              && request.resource.data.doseAmount > 0 && request.resource.data.doseAmount <= 1000))
+            && optString(request.resource.data, 'doseUnit', 20)
+            && request.resource.data.asNeeded is bool
+            && healthTimes(request.resource.data.times)
+            && healthInt(request.resource.data, 'everyDays', 1, 31)
+            && (!('rule' in request.resource.data) || (request.resource.data.rule is map && request.resource.data.rule.size() <= 7))
+            && healthNum(request.resource.data, 'minHours', 0, 72)
+            && healthInt(request.resource.data, 'maxPerDay', 1, 24)
+            && (!('withFood' in request.resource.data) || request.resource.data.withFood is bool)
+            && healthYmd(request.resource.data, 'startDate')
+            && (!('endDate' in request.resource.data) || healthYmd(request.resource.data, 'endDate'))
+            && optString(request.resource.data, 'prescriberId', 128)
+            && optString(request.resource.data, 'pharmacyId', 128)
+            && healthInt(request.resource.data, 'refills', 0, 99)
+            && healthNum(request.resource.data, 'supply', 0, 10000)
+            && healthInt(request.resource.data, 'supplyAt', 0, 9999999999999)
+            && healthInt(request.resource.data, 'refillOrderedAt', 0, 9999999999999)
+            && request.resource.data.escalateMinutes is int
+            && request.resource.data.escalateMinutes >= 0
+            && request.resource.data.escalateMinutes <= 240
+            && request.resource.data.remind is bool
+            && optString(request.resource.data, 'notes', 500)
+            && healthAuthored(request.resource.data);
+        }
+
+        // Doses given or skipped, by whoever recorded them: a scheduled one answers its `slot`
+        // ("YYYY-MM-DDTHH:MM"), an as-needed one has none. Helpers change only their own.
+        match /doses/{doseId} {
+          allow read: if healthReader(person());
+          allow delete: if healthKeeper(person()) || (healthReader(person()) && resource.data.by == myEmail());
+          allow create, update: if healthReader(person())
+            && (request.method == 'create' || healthKeeper(person()) || resource.data.by == myEmail())
+            && (request.method == 'create' ? request.resource.data.by == myEmail() : request.resource.data.by == resource.data.by)
+            && request.resource.data.keys().hasOnly(['medId', 'slot', 'at', 'status', 'note', 'by', 'createdAt'])
+            && hhStr(request.resource.data, 'medId', 1, 128)
+            && (!('slot' in request.resource.data) || (request.resource.data.slot is string
+              && request.resource.data.slot.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}')))
+            && request.resource.data.at is int
+            && request.resource.data.status in ['given', 'skipped']
+            && optString(request.resource.data, 'note', 200)
+            && hhStr(request.resource.data, 'by', 3, 254)
+            && request.resource.data.createdAt is int;
+        }
+      }
+
+      // For named people only (@huishouden/pwa-kit/audience): agenda items, to-dos and reminders
+      // about one person's care, read, written and removed only by the members in `audience` (the
+      // writer among them). Kids never write them; apps never name kids. Links lead into the suite.
+      function audienceRead() {
+        return isMember() && myEmail() in resource.data.audience;
+      }
+
+      function audienceWrite() {
+        return isMember() && role() != 'kid'
+          && request.resource.data.by == myEmail()
+          && hhEmails(request.resource.data.audience)
+          && request.resource.data.audience.size() >= 1
+          && myEmail() in request.resource.data.audience
+          && (request.method == 'create' || myEmail() in resource.data.audience)
+          && request.resource.data.url.matches('https://huishouden(-[a-z]+)*[.]web[.]app/.*');
+      }
+
+      match /personalAgenda/{itemId} {
+        allow read, delete: if audienceRead();
+        allow create, update: if audienceWrite()
+          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'audience', 'updatedAt', 'by'])
+          && hhStr(request.resource.data, 'app', 1, 40)
+          && hhStr(request.resource.data, 'ref', 1, 200)
+          && request.resource.data.kind in ['appointment', 'due', 'renewal', 'bill', 'birthday', 'medicine', 'feeding', 'task', 'other']
+          && hhStr(request.resource.data, 'title', 1, 120)
+          && request.resource.data.start is int
+          && (!('end' in request.resource.data) || (request.resource.data.end is int
+            && request.resource.data.end > request.resource.data.start))
+          && request.resource.data.allDay is bool
+          && (!('detail' in request.resource.data) || hhStr(request.resource.data, 'detail', 0, 200))
+          && hhStr(request.resource.data, 'url', 9, 2000)
+          && (!('who' in request.resource.data) || hhStr(request.resource.data, 'who', 0, 60))
+          && (!('status' in request.resource.data) || request.resource.data.status in ['upcoming', 'overdue', 'done'])
+          && request.resource.data.get('private', true) is bool
+          && request.resource.data.updatedAt is int;
+      }
+
+      match /personalTodos/{todoId} {
+        allow read, delete: if audienceRead();
+        allow create, update: if audienceWrite()
+          && request.resource.data.keys().hasOnly(['app', 'ref', 'title', 'detail', 'createdAt', 'due', 'who', 'url', 'status', 'private', 'owner', 'done', 'cancel', 'audience', 'updatedAt', 'by'])
+          && hhStr(request.resource.data, 'app', 1, 40)
+          && request.resource.data.app.matches('[a-z]{1,40}')
+          && todoId.matches(request.resource.data.app + ':.{1,240}')
+          && hhStr(request.resource.data, 'ref', 1, 200)
+          && hhStr(request.resource.data, 'title', 1, 120)
+          && (!('detail' in request.resource.data) || hhStr(request.resource.data, 'detail', 0, 200))
+          && request.resource.data.createdAt is int
+          && (!('due' in request.resource.data) || request.resource.data.due is int)
+          && (!('who' in request.resource.data) || hhStr(request.resource.data, 'who', 0, 60))
+          && hhStr(request.resource.data, 'url', 9, 2000)
+          && request.resource.data.status in ['open', 'info']
+          && request.resource.data.get('private', true) is bool
+          && (!('owner' in request.resource.data) || hhStr(request.resource.data, 'owner', 0, 254))
+          && (!('done' in request.resource.data) || todoAction(request.resource.data.done))
+          && (!('cancel' in request.resource.data) || todoAction(request.resource.data.cancel))
+          && request.resource.data.updatedAt is int;
+      }
+
+      // The shared sender (huishouden/notify) reads these too and pushes them to `recipients`,
+      // members who are in the audience. A sent one is never armed again.
+      match /personalReminders/{reminderId} {
+        allow read, delete: if audienceRead();
+        allow create, update: if audienceWrite()
+          && (request.method == 'create' || resource.data.get('sent', false) == false || request.resource.data.get('sent', false) == true)
+          && request.resource.data.keys().hasOnly(['app', 'title', 'body', 'at', 'url', 'recipients', 'ref', 'private', 'audience', 'sent', 'sentAt', 'createdAt', 'by'])
+          && hhStr(request.resource.data, 'app', 1, 40)
+          && hhStr(request.resource.data, 'title', 1, 120)
+          && hhStr(request.resource.data, 'body', 0, 500)
+          && request.resource.data.at is int
+          && hhStr(request.resource.data, 'url', 1, 2000)
+          && hhEmails(request.resource.data.recipients)
+          && request.resource.data.recipients.size() >= 1
+          && (!('ref' in request.resource.data) || hhStr(request.resource.data, 'ref', 0, 200))
+          && request.resource.data.get('private', true) is bool
+          && request.resource.data.sent is bool
+          && (!('sentAt' in request.resource.data) || request.resource.data.sentAt is int)
+          && request.resource.data.createdAt is int;
+      }
+
       // Each member's Web Push subscriptions, one per device and app (@huishouden/pwa-kit/push;
       // fields match PUSH_SUBSCRIPTION_FIELDS there). A member sees and manages only their own;
       // the keys are read only by the shared sender (huishouden/notify, a service account).
