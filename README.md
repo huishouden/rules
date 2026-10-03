@@ -30,6 +30,27 @@ bun run test   # needs Java 21 for the emulator
 Every block follows the same pattern: who may read and write (by role, below), an exact field
 list (`keys().hasOnly([...])`), and type and size checks on each field.
 
+## Health and items for named people only
+
+Health keeps people's medicines, which only the household's admins and the person's carers read:
+
+| Path | Fields |
+|---|---|
+| `healthPeople/{person}` | name, birthDate, email (when the person is a member), carers, readers (the carers and the person), allergies, notes, createdAt, updatedAt, by |
+| `healthPeople/{person}/photo/avatar` | data (WebP or JPEG data URL), updatedAt, by |
+| `healthPeople/{person}/meds/{med}` | name, strength, dose, doseAmount, doseUnit, asNeeded, times, everyDays, rule, minHours, maxPerDay, withFood, startDate, endDate, prescriberId, pharmacyId, refills, supply, supplyAt, refillOrderedAt, escalateMinutes, remind, notes, createdAt, updatedAt, by |
+| `healthPeople/{person}/doses/{dose}` | medId, slot (`YYYY-MM-DDTHH:MM`, none when as needed), at, status (`given`, `skipped`), note, by, createdAt |
+
+Everything under a person is checked against the person document by its path, so list queries
+work: admins list `healthPeople` whole, everyone else with `where('readers', 'array-contains', me)`.
+Kids never read health data, even if named.
+
+`personalAgenda`, `personalTodos` and `personalReminders` hold the agenda items, to-dos and
+reminders for named members only (`@huishouden/pwa-kit/audience`): each names `audience`, and only
+those members read, write (in their own name, among the audience) and remove it; queries ask for
+`where('audience', 'array-contains', me)`. The shared sender reads `personalReminders` with the
+collection-group indexes in `firestore.indexes.json`.
+
 ## Roles
 
 Each member has a role in the household document's `roles` map (`{ "<email>": "admin" }`). Anyone
@@ -47,6 +68,10 @@ it doesn't name is a member, except the household's creator (first in `members`)
 | Give pet medicine (dose logs) | yes | yes | if the course allows them | |
 | Read or write Spending and Bills | yes | yes | | |
 | Read contacts, appointments and agenda items marked private | yes | yes | | |
+| Health: read a person, their medicines and doses | yes | if a carer (or it is them) | if a carer | |
+| Health: add or change a person and their medicines | yes | if a carer | | |
+| Health: record a dose given or skipped; mark a refill ordered | yes | if a carer | if a carer (change own doses only) | |
+| Personal agenda items, to-dos and reminders | if named in `audience` | if named | if named | |
 
 - Helpers and kids add records in their own name (`by` is their email) and may change or delete
   only those; on anyone's record they may change only the fields that tick it off.
