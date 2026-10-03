@@ -38,8 +38,8 @@ Health keeps people's medicines, which only the household's admins and the perso
 |---|---|
 | `healthPeople/{person}` | name, birthDate, email (when the person is a member), carers, readers (the carers and the person), allergies, notes, createdAt, updatedAt, by |
 | `healthPeople/{person}/photo/avatar` | data (WebP or JPEG data URL), updatedAt, by |
-| `healthPeople/{person}/meds/{med}` | name, strength, dose, doseAmount, doseUnit, asNeeded, times, everyDays, rule, minHours, maxPerDay, withFood, startDate, endDate, prescriberId, pharmacyId, refills, supply, supplyAt, refillOrderedAt, escalateMinutes, remind, notes, createdAt, updatedAt, by |
-| `healthPeople/{person}/doses/{dose}` | medId, slot (`YYYY-MM-DDTHH:MM`, none when as needed), at, status (`given`, `skipped`), note, by, createdAt |
+| `healthPeople/{person}/meds/{med}` | personId (the path's), name, strength, dose, doseAmount, doseUnit, asNeeded, times, everyDays, rule, minHours, maxPerDay, withFood, startDate, endDate, prescriberId, pharmacyId, refills, supply, supplyAt, refillOrderedAt, escalateMinutes, remind, notes, createdAt, updatedAt, by |
+| `healthPeople/{person}/doses/{dose}` | personId (the path's), medId, slot (`YYYY-MM-DDTHH:MM`, none when as needed), at, status (`given`, `skipped`), note, by, createdAt |
 
 Everything under a person is checked against the person document by its path, so list queries
 work: admins list `healthPeople` whole, everyone else with `where('readers', 'array-contains', me)`.
