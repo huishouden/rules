@@ -1066,6 +1066,13 @@ describe('Huishouden Spending', () => {
     await assertFails(setDoc(ref, noCreated));
   });
 
+  it("keeps the mail checker's import id on an alert, a short string only", async () => {
+    const ref = doc(as(ALICE), 'households/h1/spendingTransactions/al-m2');
+    await assertSucceeds(setDoc(ref, tx({ source: 'alert', emailId: 'm2', importId: 'im-abc123' })));
+    await assertFails(setDoc(ref, tx({ source: 'alert', emailId: 'm2', importId: 'x'.repeat(41) })));
+    await assertFails(setDoc(ref, tx({ source: 'alert', emailId: 'm2', importId: 7 })));
+  });
+
   it("leaves the legacy Apps Script's mirrored documents readable and re-writable by members", async () => {
     // The script writes with its owner's IAM credentials (rules bypassed), with a timestamp updatedAt.
     await env.withSecurityRulesDisabled(async (ctx) => {

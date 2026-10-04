@@ -246,7 +246,7 @@ service cloud.firestore {
       match /spendingTransactions/{txId} {
         allow read, delete: if staff();
         allow create, update: if staff()
-          && request.resource.data.keys().hasOnly(['date', 'description', 'amount', 'category', 'card', 'type', 'source', 'last4', 'emailId', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['date', 'description', 'amount', 'category', 'card', 'type', 'source', 'last4', 'emailId', 'importId', 'createdAt', 'updatedAt', 'by'])
           && isYmd(request.resource.data.date)
           && spStr(request.resource.data, 'description', 1, 200)
           && request.resource.data.amount is number
@@ -257,6 +257,8 @@ service cloud.firestore {
           && request.resource.data.source in ['statement', 'alert']
           && (!('last4' in request.resource.data) || (request.resource.data.last4 is string && request.resource.data.last4.matches('^[0-9]{4}$')))
           && spOptStr(request.resource.data, 'emailId', 64)
+          // The mail checker's import that wrote it ("Undo last import").
+          && spOptStr(request.resource.data, 'importId', 40)
           && request.resource.data.createdAt is int
           && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is int)
           && spStr(request.resource.data, 'by', 1, 200);
