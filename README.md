@@ -89,6 +89,12 @@ these rules, like the connector.
   removes it, and nobody changes it. The portal shows it with Undo, which writes `undo` as the member.
 - `firestore.indexes.json` has `private` + `updatedAt` (agenda, todos) and `audience` + `updatedAt`
   (personalAgenda, personalTodos) for the Worker's change checks (a count and a sum of `updatedAt`).
+- `spendingInboxes/{id}`: a Gmail account a member connected for Spending's card alerts, which the
+  same Worker checks every few minutes as that member (`address`, `connectedAt`, `lastAlertAt`,
+  `lastAdded`, `error`, `updatedAt`, `by`). Admins and members read it; it is written in the
+  writer's own name; the member who connected it or an admin removes it. Google tokens and email
+  content are never in Firestore: the alerts it finds are ordinary `spendingTransactions`
+  (`source: 'alert'`) written as that member.
 
 ## Roles
 
