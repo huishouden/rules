@@ -744,10 +744,10 @@ describe('to-do list', () => {
     await assertFails(getDocs(query(collection(as(MALLORY), 'households/h1/todos'), where('private', '==', false))));
   });
 
-  it('carries the title, detail and button words in other languages, within the fields’ limits', async () => {
+  it('carries the title, detail and button words in other languages, strings within the fields’ limits added up', async () => {
     const texts = { es: { title: 'Arreglar la luz del porche', done: 'Listo', cancel: 'Cancelar' }, nl: { title: 'Lamp bij de veranda maken', detail: 'Buiten', done: 'Klaar' } };
     await assertSucceeds(setDoc(doc(as(BOB), path('tasks:item:i5')), todo(BOB, { ref: 'item:i5', texts })));
-    for (const bad of [{ fr: { title: 'x' } }, { es: { done: 'x'.repeat(25) } }, { es: { title: 'x'.repeat(121) } }, { es: { ops: [] } }, { es: 'x' }]) {
+    for (const bad of [{ fr: { title: 'x' } }, { es: { title: 'x'.repeat(200), detail: 'x'.repeat(169) } }, { es: { title: 7 } }, { es: { ops: [] } }, { es: 'x' }]) {
       await assertFails(setDoc(doc(as(BOB), path('tasks:item:i6')), todo(BOB, { ref: 'item:i6', texts: bad })));
     }
   });
