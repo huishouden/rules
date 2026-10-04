@@ -677,7 +677,7 @@ service cloud.firestore {
       // Huishouden Bills: bill sources (which emails are whose bills), bills (bill/v1), and each
       // member's last email check. Field lists match the app's src/lib/model.ts.
       function billKinds() {
-        return ['electric', 'gas', 'water', 'internet', 'phone', 'mortgage', 'hoa', 'insurance', 'other'];
+        return ['rent', 'electric', 'gas', 'water', 'internet', 'phone', 'mortgage', 'hoa', 'insurance', 'other'];
       }
 
       function billMoney(v) {

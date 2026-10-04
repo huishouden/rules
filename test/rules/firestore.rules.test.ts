@@ -986,7 +986,7 @@ describe('Huishouden Bills', () => {
 
   it('keeps how a bill is paid, who pays it and its reminders, in their shapes', async () => {
     const at = (id: string, data: object) => setDoc(doc(as(ALICE), `households/h1/bills/${id}`), data);
-    const rent = { ...bill, source: 'manual', sourceId: undefined, autopay: { enrolled: false }, repeat: 'monthly', payeeContactId: 'landlord', payMethod: 'zelle', payNote: 'landlord@example.com', payer: BOB, remind: { on: true, days: [3, 0], overdue: true } };
+    const rent = { ...bill, kind: 'rent', source: 'manual', sourceId: undefined, autopay: { enrolled: false }, repeat: 'monthly', payeeContactId: 'landlord', payMethod: 'zelle', payNote: 'landlord@example.com', payer: BOB, remind: { on: true, days: [3, 0], overdue: true } };
     const { sourceId: _s, ...clean } = rent;
     await assertSucceeds(at('rent', clean));
     await assertSucceeds(updateDoc(doc(as(BOB), 'households/h1/bills/rent'), { remind: { on: false }, updatedAt: 2 }));
