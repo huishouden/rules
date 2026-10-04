@@ -105,6 +105,8 @@ it doesn't name is a member, except the household's creator (first in `members`)
 | | Admin | Member | Helper | Kid |
 |---|---|---|---|---|
 | Invite and remove people, set roles (never their own) | yes | | | |
+| Read the household's home address (`home`) | yes | yes | yes | yes |
+| Set or remove the household's home (`home`, in their own name) | yes | yes | | |
 | Rename the household; settings, food preferences, portal layout, lists, cars, meal plan, medicine courses | yes | yes | | |
 | Read lists, chores, pets, baby, home, car, contacts and appointments | yes | yes | yes | yes |
 | Add items and log feeds, sleep, diapers, meals, readings and visits | yes | yes | yes | yes |
@@ -121,6 +123,10 @@ it doesn't name is a member, except the household's creator (first in `members`)
 
 - Helpers and kids add records in their own name (`by` is their email) and may change or delete
   only those; on anyone's record they may change only the fields that tick it off.
+- The household's `home` is `{ address, lat, lng, placeId?, timeZone?, approximate?, setBy, updatedAt }`
+  on the household document (`@huishouden/pwa-kit/home`), so every member reads it with the
+  household; `setBy` must be the writer. A contact may carry `lat` and `lng` (both, with its
+  address) for "2.3 mi from home".
 - A medicine course's `givers` is `all` (every helper, the default) or `approved` (only the helpers
   in `approvedHelpers`).
 - `private: true` hides a contact, appointment, agenda item or reminder from helpers and kids. A
