@@ -109,6 +109,32 @@ service cloud.firestore {
         return !('currency' in d) || (d.currency is string && d.currency.matches('[A-Z]{3}'));
       }
 
+      // Where the household lives (@huishouden/pwa-kit/home): one address line, its point, the
+      // OpenStreetMap object it came from, the IANA zone, whether it is only the neighbourhood, and
+      // who set it when. Every member reads it with the household (a babysitter needs the address);
+      // admins and members set it, in their own name, or remove it.
+      function householdHome(d) {
+        return !('home' in d) || (d.home is map
+          && d.home.keys().hasOnly(['address', 'lat', 'lng', 'placeId', 'timeZone', 'approximate', 'setBy', 'updatedAt'])
+          && d.home.keys().hasAll(['address', 'lat', 'lng', 'setBy', 'updatedAt'])
+          && d.home.address is string && d.home.address.size() > 0 && d.home.address.size() <= 300
+          && d.home.lat is number && d.home.lat >= -90 && d.home.lat <= 90
+          && d.home.lng is number && d.home.lng >= -180 && d.home.lng <= 180
+          && (!('placeId' in d.home) || (d.home.placeId is string && d.home.placeId.size() <= 100))
+          && (!('timeZone' in d.home) || (d.home.timeZone is string
+            && d.home.timeZone.matches('[A-Za-z0-9_+-]{1,32}(/[A-Za-z0-9_+-]{1,32}){0,2}')))
+          && (!('approximate' in d.home) || d.home.approximate is bool)
+          && d.home.setBy == myEmail()
+          && d.home.updatedAt is int);
+      }
+
+      // The home changed in this write, or was removed: re-checked only then, so a rename by
+      // someone else keeps the home another member set.
+      function homeOk() {
+        return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['home'])
+          || householdHome(request.resource.data);
+      }
+
       // Lowercase emails, checked as one string because rules have no loops: joined with spaces
       // (which no address contains), each entry must look like an address with no capitals, and
       // splitting back must give the same list, which fails for anything that isn't a string.
@@ -143,13 +169,14 @@ service cloud.firestore {
       // Admins invite and remove people and set roles, but never their own: an admin can't remove
       // or demote themselves, so a household always keeps one. The creator is the implicit admin
       // as members[0], so whoever else becomes first in the list must have their role written out.
-      // Members may rename the household and set its currency; helpers and kids change nothing here. Separately, each
+      // Members may rename the household and set its currency and home; helpers and kids change nothing here. Separately, each
       // member records their own first sign-in in `joined`, and only their own.
       allow update: if signedIn()
         && myEmail() in resource.data.members
         && (
           (roleOf(resource.data, myEmail()) == 'admin'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'members', 'roles', 'currency'])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'members', 'roles', 'currency', 'home'])
+            && homeOk()
             && memberEmails(request.resource.data.members)
             && householdName(request.resource.data)
             && householdCurrency(request.resource.data)
@@ -159,7 +186,8 @@ service cloud.firestore {
             && (request.resource.data.members[0] == resource.data.members[0]
               || request.resource.data.members[0] in request.resource.data.get('roles', {})))
           || (roleOf(resource.data, myEmail()) == 'member'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'currency'])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'currency', 'home'])
+            && homeOk()
             && householdName(request.resource.data)
             && householdCurrency(request.resource.data))
           || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['joined'])
@@ -1085,7 +1113,7 @@ service cloud.firestore {
         allow read: if readable();
         allow delete: if canRemove() && (staff() || openBefore());
         allow create, update: if writer([]) && privateFlag()
-          && request.resource.data.keys().hasOnly(['name', 'role', 'phone', 'email', 'website', 'address', 'mapsUrl', 'notes', 'apps', 'private', 'createdAt', 'updatedAt', 'by', 'via'])
+          && request.resource.data.keys().hasOnly(['name', 'role', 'phone', 'email', 'website', 'address', 'lat', 'lng', 'mapsUrl', 'notes', 'apps', 'private', 'createdAt', 'updatedAt', 'by', 'via'])
           && viaOk(request.resource.data)
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
@@ -1094,6 +1122,12 @@ service cloud.firestore {
           && request.resource.data.apps.size() <= 20
           && (!('notes' in request.resource.data) || (request.resource.data.notes is string && request.resource.data.notes.size() <= 1000))
           && (!('address' in request.resource.data) || (request.resource.data.address is string && request.resource.data.address.size() <= 300))
+          // Where the address is on the map (for "2.3 mi from home"): both or neither, with an address.
+          && (!('lat' in request.resource.data) || ('address' in request.resource.data
+            && request.resource.data.lat is number && request.resource.data.lat >= -90 && request.resource.data.lat <= 90))
+          && (!('lng' in request.resource.data) || ('lat' in request.resource.data
+            && request.resource.data.lng is number && request.resource.data.lng >= -180 && request.resource.data.lng <= 180))
+          && (('lng' in request.resource.data) == ('lat' in request.resource.data))
           && optString(request.resource.data, 'role', 60)
           && optString(request.resource.data, 'phone', 40)
           && optString(request.resource.data, 'email', 120)
