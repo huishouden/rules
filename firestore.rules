@@ -1117,14 +1117,25 @@ service cloud.firestore {
       // rules; rules have no loops, so here only their shape is checked, and the portal refuses
       // writes outside the item's app (todoOpsAllowed).
       function todoAction(a) {
+        return todoActionShape(a) && (!('emails' in a) || hhEmails(a.emails));
+      }
+
+      function todoActionShape(a) {
         return a is map
           && a.keys().hasOnly(['label', 'ops', 'roles', 'owner', 'emails'])
-          && a.keys().hasAll(['label', 'ops', 'roles'])
+          // label, ops and roles are required: reading a missing one fails the check.
           && hhStr(a, 'label', 1, 24)
           && a.ops is list && a.ops.size() >= 1 && a.ops.size() <= 8
           && a.roles is list && a.roles.size() <= 4 && a.roles.hasOnly(['admin', 'member', 'helper', 'kid'])
-          && (!('owner' in a) || a.owner is bool)
-          && (!('emails' in a) || hhEmails(a.emails));
+          && (!('owner' in a) || a.owner is bool);
+      }
+
+      // A personal to-do's action names only people who read it: its `emails` are some of its
+      // `audience`, which hhEmails has checked. Checking them against it, rather than as emails
+      // again, keeps a Health to-do (an audience, two actions with givers, three languages) within
+      // the 1000 expressions a request may evaluate.
+      function personalTodoAction(a, audience) {
+        return todoActionShape(a) && (!('emails' in a) || (a.emails is list && a.emails.size() <= 12 && a.emails.hasOnly(audience)));
       }
 
       match /todos/{todoId} {
@@ -1348,8 +1359,8 @@ service cloud.firestore {
           && request.resource.data.status in ['open', 'info']
           && request.resource.data.get('private', true) is bool
           && (!('owner' in request.resource.data) || hhStr(request.resource.data, 'owner', 0, 254))
-          && (!('done' in request.resource.data) || todoAction(request.resource.data.done))
-          && (!('cancel' in request.resource.data) || todoAction(request.resource.data.cancel))
+          && (!('done' in request.resource.data) || personalTodoAction(request.resource.data.done, request.resource.data.audience))
+          && (!('cancel' in request.resource.data) || personalTodoAction(request.resource.data.cancel, request.resource.data.audience))
           && request.resource.data.updatedAt is int;
       }
 
