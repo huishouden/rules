@@ -677,7 +677,7 @@ service cloud.firestore {
       // Huishouden Bills: bill sources (which emails are whose bills), bills (bill/v1), and each
       // member's last email check. Field lists match the app's src/lib/model.ts.
       function billKinds() {
-        return ['electric', 'gas', 'water', 'internet', 'phone', 'mortgage', 'hoa', 'insurance', 'other'];
+        return ['rent', 'electric', 'gas', 'water', 'internet', 'phone', 'mortgage', 'hoa', 'insurance', 'other'];
       }
 
       function billMoney(v) {
@@ -695,10 +695,31 @@ service cloud.firestore {
             && (!('via' in v) || v.via in ['card']));
       }
 
+      // How a bill is paid and who is reminded: the payee (one of the household's contacts), the way
+      // (Zelle, a check...) with a note such as the Zelle email, the member who pays it, and its
+      // reminders (`remind`: on or off, days before the due date with 0 the day itself, and overdue).
+      // Absent `remind` follows the household's default in billSettings/main.
+      function billRemindDays(v) {
+        return v is list && v.size() <= 4 && v.hasOnly([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]);
+      }
+
+      function billPay(d) {
+        return optString(d, 'payeeContactId', 100)
+          && (!('payMethod' in d) || d.payMethod in ['zelle', 'venmo', 'bank', 'check', 'cash', 'card', 'portal'])
+          && optString(d, 'payNote', 200)
+          && (!('payer' in d) || (d.payer is string && d.payer in household().members))
+          && (!('remind' in d) || (d.remind is map
+            && d.remind.keys().hasOnly(['on', 'days', 'overdue'])
+            && d.remind.on is bool
+            && (!('days' in d.remind) || billRemindDays(d.remind.days))
+            && (!('overdue' in d.remind) || d.remind.overdue is bool)));
+      }
+
       match /billSources/{sourceId} {
         allow read, delete: if staff();
         allow create, update: if staff()
-          && request.resource.data.keys().hasOnly(['name', 'kind', 'from', 'subject', 'label', 'payUrl', 'autopay', 'createdAt', 'createdBy', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['name', 'kind', 'from', 'subject', 'label', 'payUrl', 'autopay', 'payeeContactId', 'payMethod', 'payNote', 'payer', 'remind', 'createdAt', 'createdBy', 'updatedAt'])
+          && billPay(request.resource.data)
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 60
@@ -717,7 +738,8 @@ service cloud.firestore {
       match /bills/{billId} {
         allow read, delete: if staff();
         allow create, update: if staff()
-          && request.resource.data.keys().hasOnly(['schema', 'source', 'sourceId', 'kind', 'label', 'due', 'amountDue', 'status', 'autopay', 'period', 'payUrl', 'repeat', 'emailId', 'paidAt', 'paidBy', 'paidVia', 'dismissed', 'createdAt', 'createdBy', 'updatedAt', 'observedAt'])
+          && request.resource.data.keys().hasOnly(['schema', 'source', 'sourceId', 'kind', 'label', 'due', 'amountDue', 'status', 'autopay', 'period', 'payUrl', 'repeat', 'emailId', 'paidAt', 'paidBy', 'paidVia', 'dismissed', 'payeeContactId', 'payMethod', 'payNote', 'payer', 'remind', 'createdAt', 'createdBy', 'updatedAt', 'observedAt'])
+          && billPay(request.resource.data)
           && request.resource.data.schema == 'bill/v1'
           && request.resource.data.source in ['email', 'manual']
           && optString(request.resource.data, 'sourceId', 100)
@@ -758,6 +780,23 @@ service cloud.firestore {
           && optString(request.resource.data, 'billId', 100)
           && request.resource.data.by == myEmail()
           && request.resource.data.at is int;
+      }
+
+      // One document, `main`: the household's bill reminders. `remindDefault` says which bills remind
+      // without a setting of their own (none, those paid by hand, or every unpaid one; never autopay),
+      // `remindDays` and `remindOverdue` when, at 9:00 in `timeZone`.
+      match /billSettings/{docId} {
+        allow read: if staff();
+        allow delete: if false;
+        allow create, update: if staff()
+          && docId == 'main'
+          && request.resource.data.keys().hasOnly(['remindDefault', 'remindDays', 'remindOverdue', 'timeZone', 'updatedAt', 'updatedBy'])
+          && request.resource.data.remindDefault in ['none', 'manual', 'all']
+          && (!('remindDays' in request.resource.data) || billRemindDays(request.resource.data.remindDays))
+          && (!('remindOverdue' in request.resource.data) || request.resource.data.remindOverdue is bool)
+          && optString(request.resource.data, 'timeZone', 60)
+          && request.resource.data.updatedAt is int
+          && request.resource.data.updatedBy == myEmail();
       }
 
       // One per member, keyed by their email: only they record their own check.
@@ -1534,6 +1573,18 @@ service cloud.firestore {
       // fields match PUSH_SUBSCRIPTION_FIELDS there), with the device's language (`lang`), which the
       // sender uses to pick a reminder's `texts`. A member sees and manages only their own;
       // the keys are read only by the shared sender (huishouden/notify, a service account).
+      // Each member's own notification preferences (@huishouden/pwa-kit/push, NOTIFICATION_PREFS_FIELDS):
+      // `muted`, the apps whose reminders they don't get on any device. The sender reads it with a
+      // service account; only the member reads and writes their own.
+      match /notificationPrefs/{email} {
+        allow read, delete: if isMember() && email == myEmail();
+        allow create, update: if isMember()
+          && email == myEmail()
+          && request.resource.data.keys().hasOnly(['muted', 'updatedAt'])
+          && hhWords(request.resource.data.get('muted', []), 20, 40)
+          && request.resource.data.updatedAt is int;
+      }
+
       match /pushSubscriptions/{subId} {
         allow read, delete: if isMember() && resource.data.email == myEmail();
         allow create, update: if isMember()

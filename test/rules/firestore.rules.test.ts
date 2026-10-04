@@ -690,6 +690,19 @@ describe('household contents', () => {
       await assertFails(setDoc(doc(db, 'households/h1/pushSubscriptions/s1'), sub(BOB)));
     });
 
+    it("keeps each member's own notification mutes, private to them", async () => {
+      const path = `households/h1/notificationPrefs/${ALICE}`;
+      await assertSucceeds(setDoc(doc(as(ALICE), path), { muted: ['bills'], updatedAt: 1 }));
+      await assertSucceeds(setDoc(doc(as(ALICE), path), { muted: arrayUnion('pet'), updatedAt: 2 }, { merge: true }));
+      await assertSucceeds(getDoc(doc(as(ALICE), path)));
+      await assertFails(getDoc(doc(as(BOB), path)));
+      await assertFails(setDoc(doc(as(BOB), path), { muted: [], updatedAt: 3 }));
+      await assertFails(setDoc(doc(as(MALLORY), `households/h1/notificationPrefs/${MALLORY}`), { muted: [], updatedAt: 3 }));
+      await assertFails(setDoc(doc(as(ALICE), path), { muted: 'bills', updatedAt: 3 }));
+      await assertFails(setDoc(doc(as(ALICE), path), { muted: [], updatedAt: 3, extra: true }));
+      await assertSucceeds(deleteDoc(doc(as(ALICE), path)));
+    });
+
     it('accepts only the known subscription fields and keys', async () => {
       const fails = (data: Record<string, unknown>) => assertFails(setDoc(doc(as(ALICE), 'households/h1/pushSubscriptions/s4'), data));
       await fails({ ...sub(ALICE), extra: true });
@@ -969,6 +982,38 @@ describe('Huishouden Bills', () => {
     await assertSucceeds(at('b10', { ...bill, source: 'manual', repeat: 'weekly', autopay: { enrolled: true, via: 'card' } }));
     await assertFails(at('b11', { ...bill, autopay: { enrolled: true, via: 'cash' } }));
     await assertFails(at('b12', { ...bill, repeat: 'daily' }));
+  });
+
+  it('keeps how a bill is paid, who pays it and its reminders, in their shapes', async () => {
+    const at = (id: string, data: object) => setDoc(doc(as(ALICE), `households/h1/bills/${id}`), data);
+    const rent = { ...bill, kind: 'rent', source: 'manual', sourceId: undefined, autopay: { enrolled: false }, repeat: 'monthly', payeeContactId: 'landlord', payMethod: 'zelle', payNote: 'landlord@example.com', payer: BOB, remind: { on: true, days: [3, 0], overdue: true } };
+    const { sourceId: _s, ...clean } = rent;
+    await assertSucceeds(at('rent', clean));
+    await assertSucceeds(updateDoc(doc(as(BOB), 'households/h1/bills/rent'), { remind: { on: false }, updatedAt: 2 }));
+    await assertFails(at('r1', { ...clean, payMethod: 'crypto' }));
+    await assertFails(at('r2', { ...clean, payNote: 'x'.repeat(201) }));
+    await assertFails(at('r3', { ...clean, payer: MALLORY }));
+    await assertFails(at('r4', { ...clean, remind: { on: true, days: [31] } }));
+    await assertFails(at('r5', { ...clean, remind: { on: true, days: [1, 2, 3, 4, 5] } }));
+    await assertFails(at('r6', { ...clean, remind: { on: 'yes' } }));
+    await assertFails(at('r7', { ...clean, remind: { on: true, hour: 9 } }));
+    await assertFails(at('r8', { ...clean, payeeContactId: 5 }));
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/billSources/power'), { ...source, payMethod: 'portal', remind: { on: true, days: [1] } }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/billSources/p2'), { ...source, payer: MALLORY }));
+  });
+
+  it("keeps the household's bill reminder default, for members only", async () => {
+    const settings = { remindDefault: 'manual', remindDays: [3, 0], remindOverdue: true, timeZone: 'America/New_York', updatedAt: 1, updatedBy: ALICE };
+    const path = 'households/h1/billSettings/main';
+    await assertSucceeds(setDoc(doc(as(ALICE), path), settings));
+    await assertSucceeds(getDoc(doc(as(BOB), path)));
+    await assertFails(getDoc(doc(as(MALLORY), path)));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/billSettings/other'), settings));
+    await assertFails(setDoc(doc(as(ALICE), path), { ...settings, remindDefault: 'some' }));
+    await assertFails(setDoc(doc(as(ALICE), path), { ...settings, remindDays: ['3'] }));
+    await assertFails(setDoc(doc(as(ALICE), path), { ...settings, updatedBy: BOB }));
+    await assertFails(setDoc(doc(as(ALICE), path), { ...settings, extra: 1 }));
+    await assertFails(deleteDoc(doc(as(ALICE), path)));
   });
 
   it("lets each member record only their own email check, readable by members", async () => {
