@@ -562,6 +562,19 @@ describe('household contents', () => {
       await fails(withoutSent);
       await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/reminders/r4'), { ...reminder, recipients: [ALICE, BOB], body: '' }));
     });
+
+    it('carries the notification in other languages, each a title and body within the limits', async () => {
+      const texts = { es: { title: 'Dale 1 tableta a Biscuit', body: 'Con comida' }, nl: { title: 'Geef Biscuit 1 tablet', body: '' } };
+      await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/reminders/r5'), { ...reminder, texts }));
+      const fails = (t: unknown) => assertFails(setDoc(doc(as(ALICE), 'households/h1/reminders/r6'), { ...reminder, texts: t }));
+      await fails({ fr: { title: 'x', body: '' } });
+      await fails({ es: { title: '', body: '' } });
+      await fails({ es: { title: 'x'.repeat(121), body: '' } });
+      await fails({ es: { title: 'x', body: 'x'.repeat(501) } });
+      await fails({ es: { title: 'x', body: '', url: 'https://evil.example.com/' } });
+      await fails({ es: 'x' });
+      await fails('x');
+    });
   });
 
   describe('agenda', () => {
@@ -629,6 +642,15 @@ describe('household contents', () => {
       }));
       await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/agenda/a6'), without('status')));
     });
+
+    it('carries the title and detail in other languages', async () => {
+      await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/agenda/a7'), { ...item, texts: { es: { title: 'Cambiar el filtro', detail: 'Cuarto de la caldera' }, nl: { title: 'Filter vervangen' } } }));
+      const fails = (t: unknown) => assertFails(setDoc(doc(as(ALICE), 'households/h1/agenda/a8'), { ...item, texts: t }));
+      await fails({ de: { title: 'x' } });
+      await fails({ es: { title: 'x'.repeat(121) } });
+      await fails({ es: { detail: 'x'.repeat(201) } });
+      await fails({ es: { url: 'https://evil.example.com/' } });
+    });
   });
 
   describe('push subscriptions', () => {
@@ -675,6 +697,15 @@ describe('household contents', () => {
       await fails({ ...sub(ALICE), keys: 'x' });
       await fails({ ...sub(ALICE), endpoint: 'http://push.example.com/x' });
       await fails({ ...sub(ALICE), createdAt: 'now' });
+      await fails({ ...sub(ALICE), lang: 'fr' });
+    });
+
+    it("keeps the device's language, which its owner may change", async () => {
+      const db = as(ALICE);
+      await assertSucceeds(setDoc(doc(db, 'households/h1/pushSubscriptions/s5'), { ...sub(ALICE), lang: 'es' }));
+      await assertSucceeds(updateDoc(doc(db, 'households/h1/pushSubscriptions/s5'), { lang: 'nl' }));
+      await assertFails(updateDoc(doc(db, 'households/h1/pushSubscriptions/s5'), { lang: 'xx' }));
+      await assertFails(updateDoc(doc(as(BOB), 'households/h1/pushSubscriptions/s5'), { lang: 'en' }));
     });
   });
 
