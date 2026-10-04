@@ -38,8 +38,8 @@ Health keeps people's medicines, which only the household's admins and the perso
 |---|---|
 | `healthPeople/{person}` | name, birthDate, email (when the person is a member), carers, readers (the carers and the person), allergies, notes, createdAt, updatedAt, by |
 | `healthPeople/{person}/photo/avatar` | data (WebP or JPEG data URL), updatedAt, by |
-| `healthPeople/{person}/meds/{med}` | personId (the path's), name, strength, dose, doseAmount, doseUnit, asNeeded, times, everyDays, rule, minHours, maxPerDay, withFood, startDate, endDate, prescriberId, pharmacyId, refills, supply, supplyAt, refillOrderedAt, escalateMinutes, remind, notes, createdAt, updatedAt, by |
-| `healthPeople/{person}/doses/{dose}` | personId (the path's), medId, slot (`YYYY-MM-DDTHH:MM`, none when as needed), at, status (`given`, `skipped`), note, by, createdAt |
+| `healthPeople/{person}/meds/{med}` | personId (the path's), name, strength, dose, doseAmount, doseUnit, asNeeded, times, everyDays, rule, minHours, maxPerDay, withFood, startDate, endDate, prescriberId, pharmacyId, refills, supply, supplyAt, refillOrderedAt, escalateMinutes, remind, notes, createdAt, updatedAt, by, via |
+| `healthPeople/{person}/doses/{dose}` | personId (the path's), medId, slot (`YYYY-MM-DDTHH:MM`, none when as needed), at, status (`given`, `skipped`), note, by, createdAt, via |
 
 Everything under a person is checked against the person document by its path, so list queries
 work: admins list `healthPeople` whole, everyone else with `where('readers', 'array-contains', me)`.
@@ -50,6 +50,22 @@ reminders for named members only (`@huishouden/pwa-kit/audience`): each names `a
 those members read, write (in their own name, among the audience) and remove it; queries ask for
 `where('audience', 'array-contains', me)`. The shared sender reads `personalReminders` with the
 collection-group indexes in `firestore.indexes.json`.
+
+## AI assistants (huishouden/connector)
+
+A member can use Huishouden from their own AI assistant through the connector, a Cloudflare Worker
+that signs in as them and writes under these same rules. It never uses a service account for data.
+
+- `via`: the records the connector creates may carry `via: 'assistant'`, and no other value. These
+  are items, petFeedings, petDoses, petMedDoses, petAppointments, babyAppointments, carAppointments,
+  homeEvents, homeServiceLog, contacts, and Health's meds and doses.
+- `profiles/{email}` also takes `lang` (`en`, `es` or `nl`) and `timeZone` (an IANA name). The
+  connector answers in that language and counts days in that zone.
+- `connections/{grant}` is one connected assistant (`email`, `client`, `clientUri`, `createdAt`,
+  `lastUsedAt`, `by`). Only its member reads, writes and removes it.
+- `connections/{grant}/audit/{entry}` records each tool call (`tool`, `kind` read or write, `ok`,
+  `app`, `ref`, `at`, `by`). Only the connection's member creates, reads and removes entries.
+  Entries are never changed.
 
 ## Roles
 
