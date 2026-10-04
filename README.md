@@ -67,6 +67,27 @@ that signs in as them and writes under these same rules. It never uses a service
   `app`, `ref`, `at`, `by`). Only the connection's member creates, reads and removes entries.
   Entries are never changed.
 
+## Calendars (huishouden/calendar)
+
+A member can see the household in their own calendar: a subscribed feed, or a "Huishouden" calendar
+in their Google account that stays in sync both ways. The calendar Worker acts as the member under
+these rules, like the connector.
+
+- `agenda` and `personalAgenda` items may carry `series` (`rule`, `time`, `minutes`, `original`,
+  `through`: the schedule an occurrence belongs to, so a calendar shows one repeating event) and
+  `edit` (`reschedule`, `retime`, `rename`, `notes`, `skip`, `cancel`: the writes that carry a
+  change made in the member's calendar back to the record). The kit (`@huishouden/pwa-kit/agenda-core`)
+  checks the contents and which collections an app's edits may touch; each write is made as the
+  member and meets its own collection's rules.
+- `calendarSettings/{email}`: what that member's calendar shows (`hiddenApps`, `todos`, `bills`,
+  `healthDetail`, `done`, `updatedAt`, `by`). Only that member reads and writes it. Feed secrets and
+  Google tokens are never in Firestore; the Worker keeps them encrypted in its own storage.
+- `calendarChanges/{id}`: one change carried back from Google Calendar (`email`, `source: 'google'`,
+  `app`, `ref`, `title`, `change`, `from`, `to`, `undo`, `at`, `by`). Only its member reads and
+  removes it, and nobody changes it. The portal shows it with Undo, which writes `undo` as the member.
+- `firestore.indexes.json` has `private` + `updatedAt` (agenda, todos) and `audience` + `updatedAt`
+  (personalAgenda, personalTodos) for the Worker's change checks (a count and a sum of `updatedAt`).
+
 ## Roles
 
 Each member has a role in the household document's `roles` map (`{ "<email>": "admin" }`). Anyone

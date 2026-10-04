@@ -1105,6 +1105,19 @@ service cloud.firestore {
           && hhStr(request.resource.data, 'by', 0, 120);
       }
 
+      // What a calendar needs from an agenda item (@huishouden/pwa-kit/calendar-export): `series`, the
+      // schedule an occurrence belongs to, so it shows as one repeating event; `edit`, the writes that
+      // carry a change made in the person's own calendar back to the record. The kit checks their
+      // contents; huishouden/calendar applies an edit as the person, so each write meets its own
+      // collection's rules.
+      function agendaExport(d) {
+        return (!('series' in d) || (d.series is map
+            && d.series.keys().hasOnly(['rule', 'time', 'minutes', 'original', 'through'])
+            && d.series.rule is map && isYmd(d.series.original) && isYmd(d.series.through)))
+          && (!('edit' in d) || (d.edit is map && d.edit.size() <= 6
+            && d.edit.keys().hasOnly(['reschedule', 'retime', 'rename', 'notes', 'skip', 'cancel'])));
+      }
+
       // The household agenda (@huishouden/pwa-kit/agenda; fields match AGENDA_FIELDS there): every
       // app's dated things in one place, so the portal shows one calendar and a Today view. Admins and
       // members read all of it, helpers and kids the items with `private: false`; whoever writes an
@@ -1113,8 +1126,9 @@ service cloud.firestore {
         allow read: if readable();
         allow delete: if openDerivedRemoval();
         allow create, update: if openDerived()
-          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'texts', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'texts', 'series', 'edit', 'updatedAt', 'by'])
           && hhTexts(request.resource.data, 'agenda')
+          && agendaExport(request.resource.data)
           && hhStr(request.resource.data, 'app', 1, 40)
           && hhStr(request.resource.data, 'ref', 1, 200)
           && request.resource.data.kind in ['appointment', 'due', 'renewal', 'bill', 'birthday', 'medicine', 'feeding', 'task', 'other']
@@ -1347,8 +1361,9 @@ service cloud.firestore {
       match /personalAgenda/{itemId} {
         allow read, delete: if audienceRead();
         allow create, update: if audienceWrite()
-          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'texts', 'audience', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'texts', 'series', 'edit', 'audience', 'updatedAt', 'by'])
           && hhTexts(request.resource.data, 'agenda')
+          && agendaExport(request.resource.data)
           && hhStr(request.resource.data, 'app', 1, 40)
           && hhStr(request.resource.data, 'ref', 1, 200)
           && request.resource.data.kind in ['appointment', 'due', 'renewal', 'bill', 'birthday', 'medicine', 'feeding', 'task', 'other']
@@ -1408,6 +1423,47 @@ service cloud.firestore {
           && request.resource.data.sent is bool
           && (!('sentAt' in request.resource.data) || request.resource.data.sentAt is int)
           && request.resource.data.createdAt is int;
+      }
+
+      // Each member's calendar settings (@huishouden/pwa-kit/calendar-export, CALENDAR_SETTINGS_FIELDS):
+      // which apps their calendar feed and Google Calendar show, and whether to-dos, bills, finished
+      // things and Health's detail go in. Only that member reads and writes them; huishouden/calendar
+      // reads them as the member. The feed's secret and Google's tokens are never here: the Worker
+      // keeps them encrypted in its own storage.
+      match /calendarSettings/{email} {
+        allow read, delete: if isMember() && email == myEmail();
+        allow create, update: if isMember() && email == myEmail()
+          && request.resource.data.keys().hasOnly(['hiddenApps', 'todos', 'bills', 'healthDetail', 'done', 'updatedAt', 'by'])
+          && request.resource.data.hiddenApps is list && request.resource.data.hiddenApps.size() <= 30
+          && request.resource.data.todos is bool
+          && request.resource.data.bills is bool
+          && request.resource.data.healthDetail is bool
+          && request.resource.data.done is bool
+          && request.resource.data.updatedAt is int
+          && request.resource.data.by == myEmail();
+      }
+
+      // Changes a member made in their Google Calendar that huishouden/calendar carried back to the
+      // record (moved, renamed, skipped, cancelled), written as that member with the writes that undo
+      // it. Only the member sees them, undoes them (the portal writes `undo` as them, under each
+      // collection's own rules) and removes them; they are never changed.
+      match /calendarChanges/{changeId} {
+        allow read, delete: if isMember() && resource.data.email == myEmail();
+        allow update: if false;
+        allow create: if isMember()
+          && changeId.matches('[A-Za-z0-9_-]{1,100}')
+          && request.resource.data.keys().hasOnly(['email', 'source', 'app', 'ref', 'title', 'change', 'from', 'to', 'undo', 'at', 'by'])
+          && request.resource.data.email == myEmail()
+          && request.resource.data.by == myEmail()
+          && request.resource.data.source == 'google'
+          && hhStr(request.resource.data, 'app', 1, 40)
+          && hhStr(request.resource.data, 'ref', 1, 200)
+          && hhStr(request.resource.data, 'title', 1, 120)
+          && request.resource.data.change in ['moved', 'retimed', 'renamed', 'notes', 'skipped', 'cancelled']
+          && (!('from' in request.resource.data) || hhStr(request.resource.data, 'from', 0, 200))
+          && (!('to' in request.resource.data) || hhStr(request.resource.data, 'to', 0, 200))
+          && request.resource.data.undo is list && request.resource.data.undo.size() <= 12
+          && request.resource.data.at is int;
       }
 
       // AI assistants a member connected (huishouden/connector), one per grant: the member sees and
