@@ -76,7 +76,9 @@ these rules, like the connector.
 - `agenda` and `personalAgenda` items may carry `series` (`rule`, `time`, `minutes`, `original`,
   `through`: the schedule an occurrence belongs to, so a calendar shows one repeating event) and
   `edit` (`reschedule`, `retime`, `rename`, `notes`, `skip`, `cancel`: the writes that carry a
-  change made in the member's calendar back to the record). The kit (`@huishouden/pwa-kit/agenda-core`)
+  change made in the member's calendar back to the record), and `calendarDetail` (up to 200
+  characters the portal never shows, for the reader's own calendar when they turn on detail: a
+  Health dose's medicine names). The kit (`@huishouden/pwa-kit/agenda-core`)
   checks the contents and which collections an app's edits may touch; each write is made as the
   member and meets its own collection's rules.
 - `calendarSettings/{email}`: what that member's calendar shows (`hiddenApps`, `todos`, `bills`,

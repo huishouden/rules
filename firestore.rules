@@ -1109,13 +1109,16 @@ service cloud.firestore {
       // schedule an occurrence belongs to, so it shows as one repeating event; `edit`, the writes that
       // carry a change made in the person's own calendar back to the record. The kit checks their
       // contents; huishouden/calendar applies an edit as the person, so each write meets its own
-      // collection's rules.
+      // collection's rules. `calendarDetail`: more than the portal shows (a Health dose's medicine
+      // names), only for the reader's own calendar when they ask for detail; it never leaves the
+      // item's readers.
       function agendaExport(d) {
         return (!('series' in d) || (d.series is map
             && d.series.keys().hasOnly(['rule', 'time', 'minutes', 'original', 'through'])
             && d.series.rule is map && isYmd(d.series.original) && isYmd(d.series.through)))
           && (!('edit' in d) || (d.edit is map && d.edit.size() <= 6
-            && d.edit.keys().hasOnly(['reschedule', 'retime', 'rename', 'notes', 'skip', 'cancel'])));
+            && d.edit.keys().hasOnly(['reschedule', 'retime', 'rename', 'notes', 'skip', 'cancel'])))
+          && (!('calendarDetail' in d) || hhStr(d, 'calendarDetail', 0, 200));
       }
 
       // The household agenda (@huishouden/pwa-kit/agenda; fields match AGENDA_FIELDS there): every
@@ -1126,7 +1129,7 @@ service cloud.firestore {
         allow read: if readable();
         allow delete: if openDerivedRemoval();
         allow create, update: if openDerived()
-          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'texts', 'series', 'edit', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'texts', 'series', 'edit', 'calendarDetail', 'updatedAt', 'by'])
           && hhTexts(request.resource.data, 'agenda')
           && agendaExport(request.resource.data)
           && hhStr(request.resource.data, 'app', 1, 40)
@@ -1361,7 +1364,7 @@ service cloud.firestore {
       match /personalAgenda/{itemId} {
         allow read, delete: if audienceRead();
         allow create, update: if audienceWrite()
-          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'texts', 'series', 'edit', 'audience', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'texts', 'series', 'edit', 'calendarDetail', 'audience', 'updatedAt', 'by'])
           && hhTexts(request.resource.data, 'agenda')
           && agendaExport(request.resource.data)
           && hhStr(request.resource.data, 'app', 1, 40)
