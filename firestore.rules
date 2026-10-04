@@ -62,6 +62,12 @@ service cloud.firestore {
             : ((addedByMe() && signsAsMe()) || request.resource.data.diff(resource.data).affectedKeys().hasOnly(ticks))));
       }
 
+      // Made from the person's own AI assistant (huishouden/connector), which writes as them under
+      // these same rules: records it creates may say so, and only that way.
+      function viaOk(d) {
+        return !('via' in d) || d.via == 'assistant';
+      }
+
       function canRemove() {
         return staff() || (helping() && addedByMe());
       }
@@ -178,6 +184,7 @@ service cloud.firestore {
         allow read: if isMember();
         allow delete: if canRemove();
         allow create, update: if writer(['completed', 'completedAt', 'updatedAt', 'subtasks', 'position'])
+          && viaOk(request.resource.data)
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 200
@@ -338,6 +345,7 @@ service cloud.firestore {
         allow read: if readable();
         allow delete: if canRemove() && (staff() || openBefore());
         allow create, update: if writer([]) && privateFlag()
+          && viaOk(request.resource.data)
           && request.resource.data.title is string
           && request.resource.data.title.size() > 0
           && request.resource.data.title.size() <= 120
@@ -444,7 +452,8 @@ service cloud.firestore {
         allow read: if readable();
         allow delete: if canRemove() && (staff() || openBefore());
         allow create, update: if writer([]) && privateFlag()
-          && request.resource.data.keys().hasOnly(['vehicleId', 'title', 'at', 'location', 'notes', 'shopId', 'calendarEventId', 'calendarLink', 'private', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['vehicleId', 'title', 'at', 'location', 'notes', 'shopId', 'calendarEventId', 'calendarLink', 'private', 'createdAt', 'updatedAt', 'by', 'via'])
+          && viaOk(request.resource.data)
           && carStr(request.resource.data, 'vehicleId', 128)
           && carName(request.resource.data, 'title', 120)
           && request.resource.data.at is int
@@ -526,7 +535,8 @@ service cloud.firestore {
         allow read: if isMember();
         allow delete: if canRemove();
         allow create, update: if writer([])
-          && request.resource.data.keys().hasOnly(['date', 'title', 'taskId', 'contactId', 'who', 'costCents', 'notes', 'calendarEventId', 'calendarLink', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['date', 'title', 'taskId', 'contactId', 'who', 'costCents', 'notes', 'calendarEventId', 'calendarLink', 'createdAt', 'updatedAt', 'by', 'via'])
+          && viaOk(request.resource.data)
           && isYmd(request.resource.data.date)
           && request.resource.data.title is string
           && request.resource.data.title.size() > 0
@@ -607,7 +617,8 @@ service cloud.firestore {
         allow delete: if canRemove();
         allow create, update: if writer([])
           && eventId.matches('[A-Za-z0-9-]{1,100}')
-          && request.resource.data.keys().hasOnly(['title', 'kind', 'rule', 'time', 'contactId', 'notes', 'prep', 'exceptions', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['title', 'kind', 'rule', 'time', 'contactId', 'notes', 'prep', 'exceptions', 'createdAt', 'updatedAt', 'by', 'via'])
+          && viaOk(request.resource.data)
           && request.resource.data.title is string
           && request.resource.data.title.size() > 0
           && request.resource.data.title.size() <= 120
@@ -808,7 +819,8 @@ service cloud.firestore {
         allow read: if isMember();
         allow delete: if canRemove();
         allow create, update: if writer([]) && role() != 'kid'
-          && request.resource.data.keys().hasOnly(['petId', 'reminderId', 'title', 'at', 'by', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['petId', 'reminderId', 'title', 'at', 'by', 'createdAt', 'via'])
+          && viaOk(request.resource.data)
           && petStr(request.resource.data, 'petId', 1, 128)
           && petStr(request.resource.data, 'reminderId', 1, 128)
           && petStr(request.resource.data, 'title', 1, 80)
@@ -820,7 +832,8 @@ service cloud.firestore {
         allow read: if readable();
         allow delete: if canRemove() && (staff() || openBefore());
         allow create, update: if writer([]) && privateFlag()
-          && request.resource.data.keys().hasOnly(['petIds', 'kind', 'title', 'at', 'location', 'notes', 'contactId', 'calendarEventId', 'calendarLink', 'private', 'createdAt', 'by'])
+          && request.resource.data.keys().hasOnly(['petIds', 'kind', 'title', 'at', 'location', 'notes', 'contactId', 'calendarEventId', 'calendarLink', 'private', 'createdAt', 'by', 'via'])
+          && viaOk(request.resource.data)
           && request.resource.data.petIds is list
           && request.resource.data.petIds.size() <= 10
           && request.resource.data.kind in ['vet', 'grooming', 'boarding', 'other']
@@ -881,7 +894,8 @@ service cloud.firestore {
         allow read: if isMember();
         allow delete: if canRemove();
         allow create, update: if writer([])
-          && request.resource.data.keys().hasOnly(['petId', 'mealId', 'at', 'portion', 'note', 'by', 'createdAt', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['petId', 'mealId', 'at', 'portion', 'note', 'by', 'createdAt', 'updatedAt', 'via'])
+          && viaOk(request.resource.data)
           && petStr(request.resource.data, 'petId', 1, 128)
           && petOptStr(request.resource.data, 'mealId', 128)
           && request.resource.data.at is int
@@ -946,7 +960,8 @@ service cloud.firestore {
         allow create, update: if writer([])
           && petStr(request.resource.data, 'courseId', 1, 128)
           && mayGive(request.resource.data.courseId)
-          && request.resource.data.keys().hasOnly(['petId', 'courseId', 'slot', 'at', 'skipped', 'by', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['petId', 'courseId', 'slot', 'at', 'skipped', 'by', 'createdAt', 'via'])
+          && viaOk(request.resource.data)
           // Skipped rather than given.
           && (!('skipped' in request.resource.data) || request.resource.data.skipped is bool)
           && petStr(request.resource.data, 'petId', 1, 128)
@@ -964,8 +979,14 @@ service cloud.firestore {
         allow read: if isMember();
         allow write: if isMember()
           && email == myEmail()
-          && request.resource.data.keys().hasOnly(['name', 'photoURL', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['name', 'photoURL', 'lang', 'timeZone', 'updatedAt'])
           && request.resource.data.updatedAt is int
+          // The member's language and time zone ("Europe/Amsterdam"), so what answers for them away
+          // from their devices (their AI assistant, through huishouden/connector) speaks and counts
+          // days their way.
+          && (!('lang' in request.resource.data) || request.resource.data.lang in ['en', 'es', 'nl'])
+          && (!('timeZone' in request.resource.data) || (request.resource.data.timeZone is string
+            && request.resource.data.timeZone.matches('[A-Za-z0-9_+-]{1,32}(/[A-Za-z0-9_+-]{1,32}){0,2}')))
           && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 100))
           && (!('photoURL' in request.resource.data) || (request.resource.data.photoURL is string
             && request.resource.data.photoURL.matches('https://.*') && request.resource.data.photoURL.size() <= 500));
@@ -979,7 +1000,8 @@ service cloud.firestore {
         allow read: if readable();
         allow delete: if canRemove() && (staff() || openBefore());
         allow create, update: if writer([]) && privateFlag()
-          && request.resource.data.keys().hasOnly(['name', 'role', 'phone', 'email', 'website', 'address', 'mapsUrl', 'notes', 'apps', 'private', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['name', 'role', 'phone', 'email', 'website', 'address', 'mapsUrl', 'notes', 'apps', 'private', 'createdAt', 'updatedAt', 'by', 'via'])
+          && viaOk(request.resource.data)
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 120
@@ -1252,7 +1274,8 @@ service cloud.firestore {
             && request.resource.data.get('updatedAt', 0) is int;
           allow create, update: if healthKeeper(person())
             && request.resource.data.get('personId', '') == personId
-            && request.resource.data.keys().hasOnly(['personId', 'name', 'strength', 'dose', 'doseAmount', 'doseUnit', 'asNeeded', 'times', 'everyDays', 'rule', 'minHours', 'maxPerDay', 'withFood', 'startDate', 'endDate', 'prescriberId', 'pharmacyId', 'refills', 'supply', 'supplyAt', 'refillOrderedAt', 'escalateMinutes', 'remind', 'notes', 'createdAt', 'updatedAt', 'by'])
+            && request.resource.data.keys().hasOnly(['personId', 'name', 'strength', 'dose', 'doseAmount', 'doseUnit', 'asNeeded', 'times', 'everyDays', 'rule', 'minHours', 'maxPerDay', 'withFood', 'startDate', 'endDate', 'prescriberId', 'pharmacyId', 'refills', 'supply', 'supplyAt', 'refillOrderedAt', 'escalateMinutes', 'remind', 'notes', 'createdAt', 'updatedAt', 'by', 'via'])
+            && viaOk(request.resource.data)
             && hhStr(request.resource.data, 'name', 1, 80)
             && optString(request.resource.data, 'strength', 40)
             && optString(request.resource.data, 'dose', 80)
@@ -1291,7 +1314,8 @@ service cloud.firestore {
             && (request.method == 'create' || healthKeeper(person()) || resource.data.by == myEmail())
             && (request.method == 'create' ? request.resource.data.by == myEmail() : request.resource.data.by == resource.data.by)
             && request.resource.data.get('personId', '') == personId
-            && request.resource.data.keys().hasOnly(['personId', 'medId', 'slot', 'at', 'status', 'note', 'by', 'createdAt'])
+            && request.resource.data.keys().hasOnly(['personId', 'medId', 'slot', 'at', 'status', 'note', 'by', 'createdAt', 'via'])
+            && viaOk(request.resource.data)
             && hhStr(request.resource.data, 'medId', 1, 128)
             && (!('slot' in request.resource.data) || (request.resource.data.slot is string
               && request.resource.data.slot.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}')))
@@ -1384,6 +1408,44 @@ service cloud.firestore {
           && request.resource.data.sent is bool
           && (!('sentAt' in request.resource.data) || request.resource.data.sentAt is int)
           && request.resource.data.createdAt is int;
+      }
+
+      // AI assistants a member connected (huishouden/connector), one per grant: the member sees and
+      // revokes their own; nobody else reads them. The connector writes them as the member when the
+      // assistant first acts in this household, and an entry under `audit` for every tool call.
+      function connectionShape(d) {
+        return d.keys().hasOnly(['email', 'client', 'clientUri', 'createdAt', 'lastUsedAt', 'by'])
+          && d.email == myEmail() && d.by == myEmail()
+          && hhStr(d, 'client', 1, 80)
+          && (!('clientUri' in d) || (hhStr(d, 'clientUri', 9, 300) && d.clientUri.matches('https://.+')))
+          && d.createdAt is int
+          && (!('lastUsedAt' in d) || d.lastUsedAt is int);
+      }
+
+      match /connections/{grantId} {
+        allow read, delete: if isMember() && resource.data.email == myEmail();
+        allow create: if isMember() && grantId.matches('[A-Za-z0-9_-]{1,64}') && connectionShape(request.resource.data);
+        allow update: if isMember() && resource.data.email == myEmail() && connectionShape(request.resource.data)
+          && request.resource.data.createdAt == resource.data.createdAt;
+
+        function mine() {
+          return isMember() && get(/databases/$(database)/documents/households/$(householdId)/connections/$(grantId)).data.email == myEmail();
+        }
+
+        // What the assistant did: the tool, whether it read or wrote, and the record it touched.
+        match /audit/{entryId} {
+          allow read, delete: if mine();
+          allow update: if false;
+          allow create: if mine()
+            && request.resource.data.keys().hasOnly(['tool', 'kind', 'ok', 'app', 'ref', 'at', 'by'])
+            && hhStr(request.resource.data, 'tool', 1, 40)
+            && request.resource.data.kind in ['read', 'write']
+            && request.resource.data.ok is bool
+            && (!('app' in request.resource.data) || hhStr(request.resource.data, 'app', 1, 40))
+            && (!('ref' in request.resource.data) || hhStr(request.resource.data, 'ref', 1, 300))
+            && request.resource.data.at is int
+            && request.resource.data.by == myEmail();
+        }
       }
 
       // Each member's Web Push subscriptions, one per device and app (@huishouden/pwa-kit/push;
