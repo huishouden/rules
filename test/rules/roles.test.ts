@@ -7,7 +7,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { arrayRemove, arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 
 // One household with every role: Alice created it (admin by being first), Bob is a member by
 // default, Helen and Hank help, Kim is a kid. Mallory is in no household.
@@ -291,20 +291,48 @@ describe('everyday records, by role', () => {
 
 describe("a contact's pay details", () => {
   const landlord = (by: string) => ({ name: 'Example Rentals', apps: ['bills'], private: false, createdAt: 1, by });
-  const pay = { zelle: '(555) 010-2231' };
+  const pay = (by: string) => ({ zelle: '(555) 010-2231', updatedAt: 1, by });
+
+  for (const who of EVERYONE) {
+    const me = PERSON[who];
+    const staff = STAFF.includes(who);
+    it(`${who}: ${staff ? 'reads, adds, changes and deletes' : 'can’t read, add, change or delete'} pay details`, async () => {
+      await seed('households/h1/contacts/landlord', landlord(ALICE));
+      await seed('households/h1/contactPay/landlord', pay(ALICE));
+      await expect(staff, getDoc(doc(as(me), 'households/h1/contactPay/landlord')));
+      await expect(staff, getDocs(collection(as(me), 'households/h1/contactPay')));
+      await expect(staff, setDoc(doc(as(me), 'households/h1/contactPay/landlord'), { venmo: '@example-rentals', updatedAt: 2, by: me }, { merge: true }));
+      await seed(`households/h1/contacts/mine-${who}`, landlord(me));
+      await expect(staff, setDoc(doc(as(me), `households/h1/contactPay/mine-${who}`), pay(me)));
+      await expect(staff, deleteDoc(doc(as(me), 'households/h1/contactPay/landlord')));
+    });
+  }
 
   for (const who of IN_HOUSEHOLD) {
     const me = PERSON[who];
-    const staff = STAFF.includes(who);
-    it(`${who}: ${staff ? 'adds and changes' : 'can’t add or change'} pay details, ${staff ? 'and' : 'but'} edits the rest of their own contact keeping them`, async () => {
-      await expect(staff, setDoc(doc(as(me), `households/h1/contacts/new-${who}`), { ...landlord(me), pay }));
-      const mine = `households/h1/contacts/mine-${who}`;
-      await seed(mine, { ...landlord(me), pay });
-      await expect(staff, updateDoc(doc(as(me), mine), { 'pay.venmo': '@example-rentals' }));
-      await expect(staff, updateDoc(doc(as(me), mine), { pay: { zelle: 'rent@example.com' } }));
+    it(`${who}: edits and deletes their own contact without touching its pay details`, async () => {
+      const mine = `households/h1/contacts/own-${who}`;
+      await seed(mine, landlord(me));
+      await seed(`households/h1/contactPay/own-${who}`, pay(ALICE));
       await assertSucceeds(updateDoc(doc(as(me), mine), { name: 'Example Rentals LLC', updatedAt: 2 }));
+      await assertFails(updateDoc(doc(as(me), mine), { pay: { zelle: 'rent@example.com' } }));
+      await assertSucceeds(deleteDoc(doc(as(me), mine)));
     });
   }
+
+  it('an admin removes pay details left on a contact (moving them to contactPay) and those of a deleted contact', async () => {
+    await seed('households/h1/contacts/old', { ...landlord(BOB), pay: { zelle: 'old@example.com' } });
+    await seed('households/h1/contactPay/gone', pay(BOB));
+    const db = as(ALICE);
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'households/h1/contactPay/old'), { zelle: 'old@example.com', updatedAt: 3, by: ALICE });
+    batch.update(doc(db, 'households/h1/contacts/old'), { pay: deleteField() });
+    batch.delete(doc(db, 'households/h1/contactPay/gone'));
+    await assertSucceeds(batch.commit());
+    // A helper can't do the same.
+    await seed('households/h1/contacts/old2', { ...landlord(HELEN), pay: { zelle: 'old@example.com' } });
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/contactPay/old2'), { zelle: 'old@example.com', by: HELEN }));
+  });
 });
 
 describe('private contacts and appointments', () => {
