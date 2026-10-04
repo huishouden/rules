@@ -141,3 +141,10 @@ it doesn't name is a member, except the household's creator (first in `members`)
   `<eventId>_<day>`) is open to everyone in their own name; Undo removes your own tick.
 - Kids never tick off a medicine reminder (flea and tick, heartworm, deworming, medication): that
   records it given. Ticking a step on someone else's item keeps the number of steps.
+
+## License
+
+Source available under [PolyForm Shield 1.0.0](LICENSE): you may use, study and modify this code
+for any purpose except providing a product that competes with Huishouden.
+
+Huishouden and its logo are the project's brand; please don't use them for other products.
