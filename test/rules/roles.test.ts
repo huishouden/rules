@@ -289,6 +289,24 @@ describe('everyday records, by role', () => {
   }
 });
 
+describe("a contact's pay details", () => {
+  const landlord = (by: string) => ({ name: 'Example Rentals', apps: ['bills'], private: false, createdAt: 1, by });
+  const pay = { zelle: '(555) 010-2231' };
+
+  for (const who of IN_HOUSEHOLD) {
+    const me = PERSON[who];
+    const staff = STAFF.includes(who);
+    it(`${who}: ${staff ? 'adds and changes' : 'can’t add or change'} pay details, ${staff ? 'and' : 'but'} edits the rest of their own contact keeping them`, async () => {
+      await expect(staff, setDoc(doc(as(me), `households/h1/contacts/new-${who}`), { ...landlord(me), pay }));
+      const mine = `households/h1/contacts/mine-${who}`;
+      await seed(mine, { ...landlord(me), pay });
+      await expect(staff, updateDoc(doc(as(me), mine), { 'pay.venmo': '@example-rentals' }));
+      await expect(staff, updateDoc(doc(as(me), mine), { pay: { zelle: 'rent@example.com' } }));
+      await assertSucceeds(updateDoc(doc(as(me), mine), { name: 'Example Rentals LLC', updatedAt: 2 }));
+    });
+  }
+});
+
 describe('private contacts and appointments', () => {
   const PRIVATE = SHARED.filter((s) => ['contacts', 'babyAppointments', 'carAppointments', 'petAppointments'].includes(s.col));
 
