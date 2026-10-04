@@ -1060,32 +1060,32 @@ service cloud.firestore {
       // The household's contacts, shared by every app (@huishouden/pwa-kit/contacts; fields match
       // CONTACT_FIELDS and CONTACT_LIMITS there). Links are web addresses only, never javascript: or
       // data: URLs, since every app renders them as links.
-      // `pay`: how the household pays them (Bills remembers the Zelle phone, the Venmo @handle, bank
-      // details, the mailing address for checks, the portal's link). Money, so only admins and
-      // members change it; a helper's or kid's write keeps it as it was.
-      function contactPay(d) {
-        return !('pay' in d) || (d.pay is map
-          && d.pay.keys().hasOnly(['zelle', 'venmo', 'bank', 'check', 'portal'])
-          && optString(d.pay, 'zelle', 120)
-          && optString(d.pay, 'venmo', 60)
-          && optString(d.pay, 'bank', 200)
-          && optString(d.pay, 'check', 300)
-          && optLink(d.pay, 'portal'));
-      }
-
-      function payUnchanged() {
-        return request.method == 'create'
-          ? !('pay' in request.resource.data)
-          : request.resource.data.get('pay', null) == resource.data.get('pay', null);
+      // A contact's pay details (Bills remembers the Zelle phone, the Venmo @handle, bank details, the
+      // mailing address for checks, the portal's link) are money: helpers and kids read open
+      // contacts, so they are never on the contact (no `pay` there) but in `contactPay/{contactId}`,
+      // which only admins and members read and write. Written only for a contact that exists (or is
+      // added in the same batch); admins and members delete them with the contact, or later when a
+      // helper deleted it (@huishouden/pwa-kit/contacts tidyContactPay).
+      match /contactPay/{contactId} {
+        allow read, delete: if staff();
+        allow create, update: if staff()
+          && request.resource.data.keys().hasOnly(['zelle', 'venmo', 'bank', 'check', 'portal', 'updatedAt', 'by'])
+          && optString(request.resource.data, 'zelle', 120)
+          && optString(request.resource.data, 'venmo', 60)
+          && optString(request.resource.data, 'bank', 200)
+          && optString(request.resource.data, 'check', 300)
+          && optLink(request.resource.data, 'portal')
+          && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is int)
+          && (!('by' in request.resource.data) || request.resource.data.by == myEmail()
+            || (request.method == 'update' && request.resource.data.by == resource.data.get('by', null)))
+          && existsAfter(/databases/$(database)/documents/households/$(householdId)/contacts/$(contactId));
       }
 
       match /contacts/{contactId} {
         allow read: if readable();
         allow delete: if canRemove() && (staff() || openBefore());
         allow create, update: if writer([]) && privateFlag()
-          && request.resource.data.keys().hasOnly(['name', 'role', 'phone', 'email', 'website', 'address', 'mapsUrl', 'notes', 'pay', 'apps', 'private', 'createdAt', 'updatedAt', 'by', 'via'])
-          && contactPay(request.resource.data)
-          && (staff() || payUnchanged())
+          && request.resource.data.keys().hasOnly(['name', 'role', 'phone', 'email', 'website', 'address', 'mapsUrl', 'notes', 'apps', 'private', 'createdAt', 'updatedAt', 'by', 'via'])
           && viaOk(request.resource.data)
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0

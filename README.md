@@ -112,6 +112,7 @@ it doesn't name is a member, except the household's creator (first in `members`)
 | Change or delete what someone else added | yes | yes | own only | own only |
 | Give pet medicine (dose logs) | yes | yes | if the course allows them | |
 | Read or write Spending and Bills | yes | yes | | |
+| Read or write a contact's pay details (`contactPay`) | yes | yes | | |
 | Read contacts, appointments and agenda items marked private | yes | yes | | |
 | Health: read a person, their medicines and doses | yes | if a carer (or it is them) | if a carer | |
 | Health: add or change a person and their medicines | yes | if a carer | | |
@@ -125,6 +126,9 @@ it doesn't name is a member, except the household's creator (first in `members`)
 - `private: true` hides a contact, appointment, agenda item or reminder from helpers and kids. A
   record without the flag is private to them until it is written with `private: false`, so their
   queries ask for `private == false`; the apps write the flag on every save.
+- A contact's pay details (Zelle, Venmo, bank, check address, portal link) are money, so they are
+  never on the contact (which helpers and kids read when it is open) but in
+  `contactPay/{contactId}`, for admins and members only, and only for a contact that exists.
 - The to-do list (`todos`) is kept in step the same way. Each item's Done and Cancel are writes the
   portal makes as the member who taps them, so each is checked by its own collection's rules here.
   Cancelled things stay in their app's history: a cancelled to-do (`cancelledAt`), a paused Home job

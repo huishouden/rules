@@ -1220,20 +1220,36 @@ describe('attacks', () => {
     await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/contacts/c10'), { ...vet, website: 'http://example.com' }));
   });
 
-  it("keeps a contact's pay details to the known ways, their lengths and an https portal", async () => {
+  it("keeps a contact's pay details to the known ways, their lengths and an https portal, in contactPay only", async () => {
     const landlord = { name: 'Example Rentals', apps: ['bills'], createdAt: 1, by: ALICE };
-    const put = (pay: unknown) => setDoc(doc(as(ALICE), 'households/h1/contacts/p1'), { ...landlord, pay });
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/contacts/p1'), landlord));
+    const put = (pay: Record<string, unknown>) => setDoc(doc(as(ALICE), 'households/h1/contactPay/p1'), { ...pay, updatedAt: 1, by: ALICE });
     await assertSucceeds(put({ zelle: '(555) 010-2231', venmo: '@example-rentals', bank: 'Example Bank, routing 000000000', check: '1 Example St, Springfield', portal: 'https://pay.example.com/rent' }));
     await assertFails(put({ paypal: 'x' }));
-    await assertFails(put('landlord@example.com'));
     await assertFails(put({ zelle: 'x'.repeat(121) }));
     await assertFails(put({ venmo: 'x'.repeat(61) }));
     await assertFails(put({ check: 'x'.repeat(301) }));
     await assertFails(put({ portal: 'javascript:alert(1)' }));
     await assertFails(put({ portal: 'http://pay.example.com' }));
     await assertFails(put({ zelle: 5 }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/contactPay/p1'), { zelle: 'a@example.com', by: BOB }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/contactPay/p1'), { zelle: 'a@example.com', updatedAt: 'now' }));
     // Remembering one more detail later keeps the others (as Bills' merge and setContactPay write it).
-    await assertSucceeds(updateDoc(doc(as(BOB), 'households/h1/contacts/p1'), { 'pay.venmo': '@example-rentals-2', updatedAt: 2 }));
+    await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/contactPay/p1'), { venmo: '@example-rentals-2', updatedAt: 2, by: BOB }, { merge: true }));
+    // Never on the contact itself, where helpers and kids read it.
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/contacts/p2'), { ...landlord, pay: { zelle: 'a@example.com' } }));
+    await assertFails(updateDoc(doc(as(ALICE), 'households/h1/contacts/p1'), { pay: { zelle: 'a@example.com' } }));
+    await assertFails(updateDoc(doc(as(ALICE), 'households/h1/contacts/p1'), { 'pay.zelle': 'a@example.com' }));
+  });
+
+  it('writes pay details only for a contact that exists or is added with them', async () => {
+    const pay = { zelle: 'a@example.com', updatedAt: 1, by: ALICE };
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/contactPay/nobody'), pay));
+    const db = as(ALICE);
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'households/h1/contacts/new'), { name: 'Example Rentals', apps: ['bills'], createdAt: 1, by: ALICE });
+    batch.set(doc(db, 'households/h1/contactPay/new'), pay);
+    await assertSucceeds(batch.commit());
   });
 
   it('keeps list item and baby appointment links to web addresses', async () => {
