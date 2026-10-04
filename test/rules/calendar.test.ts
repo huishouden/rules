@@ -56,6 +56,12 @@ describe('agenda items for calendars', () => {
     await assertSucceeds(setDoc(doc(as(ALICE), `${H}/personalAgenda/p1`), { ...item(ALICE, { series, edit }), private: true, audience: [ALICE, BOB] }));
   });
 
+  it('may carry a calendar-only detail, a short string', async () => {
+    await assertSucceeds(setDoc(doc(as(ALICE), `${H}/personalAgenda/p2`), { ...item(ALICE), private: true, audience: [ALICE], calendarDetail: 'Amoxicillin 250 mg' }));
+    await assertFails(setDoc(doc(as(ALICE), `${H}/personalAgenda/p3`), { ...item(ALICE), private: true, audience: [ALICE], calendarDetail: 'x'.repeat(201) }));
+    await assertFails(setDoc(doc(as(ALICE), `${H}/agenda/a7`), item(ALICE, { calendarDetail: 5 })));
+  });
+
   it('refuses a series that is not one, and edits of unknown kinds', async () => {
     await assertFails(setDoc(doc(as(ALICE), `${H}/agenda/a2`), item(ALICE, { series: { ...series, extra: 1 } })));
     await assertFails(setDoc(doc(as(ALICE), `${H}/agenda/a3`), item(ALICE, { series: { ...series, original: 'soon' } })));
