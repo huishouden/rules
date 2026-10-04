@@ -309,6 +309,29 @@ service cloud.firestore {
           && spStr(request.resource.data, 'by', 1, 200);
       }
 
+      // Alert inboxes: a Gmail account a member connected so huishouden/calendar's mail checker reads
+      // the household's card alerts from it. Written as that member (the Worker acts as them, in
+      // their name). Its Google access stays sealed in the Worker, never here: only the address and
+      // what the checker last found. Admins and members see them; the member who connected one, or
+      // an admin, removes it. Connecting an address another member connected takes it over (`by`
+      // becomes the one connecting).
+      match /spendingInboxes/{inboxId} {
+        allow read: if staff();
+        allow delete: if staff() && (addedByMe() || role() == 'admin');
+        allow create, update: if staff()
+          && inboxId.matches('^[A-Za-z0-9_-]{1,64}$')
+          && signsAsMe()
+          && request.resource.data.keys().hasOnly(['address', 'connectedAt', 'lastAlertAt', 'lastAdded', 'error', 'updatedAt', 'by'])
+          && spStr(request.resource.data, 'address', 3, 200)
+          && request.resource.data.address.matches('^[^@ ]+@[^@ ]+$')
+          && request.resource.data.connectedAt is int
+          && (!('lastAlertAt' in request.resource.data) || request.resource.data.lastAlertAt is int)
+          && (!('lastAdded' in request.resource.data) || (request.resource.data.lastAdded is int
+            && request.resource.data.lastAdded >= 0 && request.resource.data.lastAdded <= 1000))
+          && (!('error' in request.resource.data) || spStr(request.resource.data, 'error', 1, 40))
+          && request.resource.data.updatedAt is int;
+      }
+
       // Huishouden Baby: the household's shared baby log, checklists and appointments.
       match /babyProfile/{docId} {
         allow read: if isMember();
