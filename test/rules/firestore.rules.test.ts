@@ -570,7 +570,8 @@ describe('household contents', () => {
       await fails({ fr: { title: 'x', body: '' } });
       await fails({ es: { title: '', body: '' } });
       await fails({ es: { title: 'x'.repeat(121), body: '' } });
-      await fails({ es: { title: 'x', body: 'x'.repeat(501) } });
+      await fails({ es: { title: 'x', body: 'x'.repeat(620) } });
+      await fails({ es: { title: 'x', body: 5 } });
       await fails({ es: { title: 'x', body: '', url: 'https://evil.example.com/' } });
       await fails({ es: 'x' });
       await fails('x');
@@ -647,8 +648,8 @@ describe('household contents', () => {
       await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/agenda/a7'), { ...item, texts: { es: { title: 'Cambiar el filtro', detail: 'Cuarto de la caldera' }, nl: { title: 'Filter vervangen' } } }));
       const fails = (t: unknown) => assertFails(setDoc(doc(as(ALICE), 'households/h1/agenda/a8'), { ...item, texts: t }));
       await fails({ de: { title: 'x' } });
-      await fails({ es: { title: 'x'.repeat(121) } });
-      await fails({ es: { detail: 'x'.repeat(201) } });
+      await fails({ es: { title: 'x'.repeat(120), detail: 'x'.repeat(201) } });
+      await fails({ es: { title: true } });
       await fails({ es: { url: 'https://evil.example.com/' } });
     });
   });

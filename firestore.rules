@@ -1015,23 +1015,30 @@ service cloud.firestore {
       // 'en', 'es' or 'nl' to the record's own text fields in that language, each no longer than the
       // field it translates, so the portal and the sender show each reader their own. Rules have
       // no loops, so every language and field is named.
-      function hhOptStr(m, k, hi) {
-        return !(k in m) || (m[k] is string && m[k].size() <= hi);
+      // Each language's words: only the record's own text fields, all strings, together no longer than those fields' limits added up. Kept to a few
+      // expressions: a request may evaluate at most 1000, and a to-do's checks are already many.
+      function hhReminderText(m) {
+        return m is map && m.keys().hasOnly(['title', 'body']) && hhStr(m, 'title', 1, 120) && m.get('body', '') is string
+          && m.values().join('').size() <= 620;
+      }
+
+      function hhTodoText(m) {
+        return m is map && m.keys().hasOnly(['title', 'detail', 'done', 'cancel'])
+          && m.get('title', '') is string && m.get('detail', '') is string && m.get('done', '') is string && m.get('cancel', '') is string
+          && m.values().join('').size() <= 368;
+      }
+
+      function hhAgendaText(m) {
+        return m is map && m.keys().hasOnly(['title', 'detail']) && m.get('title', '') is string && m.get('detail', '') is string
+          && m.values().join('').size() <= 320;
       }
 
       function hhTexts(d, kind) {
-        return !('texts' in d) || (d.texts is map && d.texts.keys().hasOnly(['en', 'es', 'nl'])
-          && (!('en' in d.texts) || hhText(d.texts.en, kind))
-          && (!('es' in d.texts) || hhText(d.texts.es, kind))
-          && (!('nl' in d.texts) || hhText(d.texts.nl, kind)));
-      }
-
-      function hhText(m, kind) {
-        return m is map && (
-          (kind == 'reminder' && m.keys().hasOnly(['title', 'body']) && hhStr(m, 'title', 1, 120) && hhOptStr(m, 'body', 500))
-          || (kind == 'todo' && m.keys().hasOnly(['title', 'detail', 'done', 'cancel']) && hhOptStr(m, 'title', 120)
-            && hhOptStr(m, 'detail', 200) && hhOptStr(m, 'done', 24) && hhOptStr(m, 'cancel', 24))
-          || (kind == 'agenda' && m.keys().hasOnly(['title', 'detail']) && hhOptStr(m, 'title', 120) && hhOptStr(m, 'detail', 200)));
+        let t = d.get('texts', {});
+        return t is map && t.keys().hasOnly(['en', 'es', 'nl'])
+          && (kind != 'reminder' || ((!('en' in t) || hhReminderText(t.en)) && (!('es' in t) || hhReminderText(t.es)) && (!('nl' in t) || hhReminderText(t.nl))))
+          && (kind != 'todo' || ((!('en' in t) || hhTodoText(t.en)) && (!('es' in t) || hhTodoText(t.es)) && (!('nl' in t) || hhTodoText(t.nl))))
+          && (kind != 'agenda' || ((!('en' in t) || hhAgendaText(t.en)) && (!('es' in t) || hhAgendaText(t.es)) && (!('nl' in t) || hhAgendaText(t.nl))));
       }
 
       //
