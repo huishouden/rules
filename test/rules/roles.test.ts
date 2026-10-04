@@ -128,6 +128,13 @@ describe('household roles', () => {
     for (const who of EVERYONE) await expect(STAFF.includes(who), updateDoc(h1(as(PERSON[who])), { name: `Home of ${who}` }));
   });
 
+  it('lets admins and members set the currency, a three-letter code; helpers and kids can’t', async () => {
+    for (const who of EVERYONE) await expect(STAFF.includes(who), updateDoc(h1(as(PERSON[who])), { currency: 'EUR' }));
+    await assertSucceeds(updateDoc(h1(as(BOB)), { name: 'Ours', currency: 'MXN' }));
+    for (const bad of ['eur', 'EURO', 'E1R', 12, '']) await assertFails(updateDoc(h1(as(ALICE)), { currency: bad }));
+    await assertFails(updateDoc(h1(as(BOB)), { currency: 'EUR', members: arrayUnion('carol@example.com') }));
+  });
+
   it('lets a member rename but not touch members or roles in the same write', async () => {
     await assertFails(updateDoc(h1(as(BOB)), { name: 'Ours', members: arrayUnion('carol@example.com') }));
     await assertFails(updateDoc(h1(as(BOB)), { name: 'Ours', roles: { ...ROLES, [HELEN]: 'member' } }));
@@ -735,6 +742,14 @@ describe('to-do list', () => {
     }
     await assertFails(getDoc(doc(as(MALLORY), path())));
     await assertFails(getDocs(query(collection(as(MALLORY), 'households/h1/todos'), where('private', '==', false))));
+  });
+
+  it('carries the title, detail and button words in other languages, within the fields’ limits', async () => {
+    const texts = { es: { title: 'Arreglar la luz del porche', done: 'Listo', cancel: 'Cancelar' }, nl: { title: 'Lamp bij de veranda maken', detail: 'Buiten', done: 'Klaar' } };
+    await assertSucceeds(setDoc(doc(as(BOB), path('tasks:item:i5')), todo(BOB, { ref: 'item:i5', texts })));
+    for (const bad of [{ fr: { title: 'x' } }, { es: { done: 'x'.repeat(25) } }, { es: { title: 'x'.repeat(121) } }, { es: { ops: [] } }, { es: 'x' }]) {
+      await assertFails(setDoc(doc(as(BOB), path('tasks:item:i6')), todo(BOB, { ref: 'item:i6', texts: bad })));
+    }
   });
 
   it('lets members publish and remove items, signed by them; outsiders can’t', async () => {

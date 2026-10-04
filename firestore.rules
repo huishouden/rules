@@ -98,6 +98,11 @@ service cloud.firestore {
         return d.name is string && d.name.size() <= 100;
       }
 
+      // The currency every app shows amounts in (ISO 4217, "USD"); unset means US dollars.
+      function householdCurrency(d) {
+        return !('currency' in d) || (d.currency is string && d.currency.matches('[A-Z]{3}'));
+      }
+
       // Lowercase emails, checked as one string because rules have no loops: joined with spaces
       // (which no address contains), each entry must look like an address with no capitals, and
       // splitting back must give the same list, which fails for anything that isn't a string.
@@ -132,23 +137,25 @@ service cloud.firestore {
       // Admins invite and remove people and set roles, but never their own: an admin can't remove
       // or demote themselves, so a household always keeps one. The creator is the implicit admin
       // as members[0], so whoever else becomes first in the list must have their role written out.
-      // Members may rename the household; helpers and kids change nothing here. Separately, each
+      // Members may rename the household and set its currency; helpers and kids change nothing here. Separately, each
       // member records their own first sign-in in `joined`, and only their own.
       allow update: if signedIn()
         && myEmail() in resource.data.members
         && (
           (roleOf(resource.data, myEmail()) == 'admin'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'members', 'roles'])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'members', 'roles', 'currency'])
             && memberEmails(request.resource.data.members)
             && householdName(request.resource.data)
+            && householdCurrency(request.resource.data)
             && rolesShape(request.resource.data)
             && myEmail() in request.resource.data.members
             && roleOf(request.resource.data, myEmail()) == 'admin'
             && (request.resource.data.members[0] == resource.data.members[0]
               || request.resource.data.members[0] in request.resource.data.get('roles', {})))
           || (roleOf(resource.data, myEmail()) == 'member'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
-            && householdName(request.resource.data))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'currency'])
+            && householdName(request.resource.data)
+            && householdCurrency(request.resource.data))
           || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['joined'])
             && request.resource.data.joined == resource.data.get('joined', []).concat([myEmail()]))
         );
@@ -1004,6 +1011,29 @@ service cloud.firestore {
           && (l.size() == 0 || (l.join(' ').matches(one + '( ' + one + ')*') && l.join(' ').split(' ') == l));
       }
 
+      // Words of a record in other languages (@huishouden/pwa-kit/i18n, docs/i18n.md): `texts` maps
+      // 'en', 'es' or 'nl' to the record's own text fields in that language, each no longer than the
+      // field it translates, so the portal and the sender show each reader their own. Rules have
+      // no loops, so every language and field is named.
+      function hhOptStr(m, k, hi) {
+        return !(k in m) || (m[k] is string && m[k].size() <= hi);
+      }
+
+      function hhTexts(d, kind) {
+        return !('texts' in d) || (d.texts is map && d.texts.keys().hasOnly(['en', 'es', 'nl'])
+          && (!('en' in d.texts) || hhText(d.texts.en, kind))
+          && (!('es' in d.texts) || hhText(d.texts.es, kind))
+          && (!('nl' in d.texts) || hhText(d.texts.nl, kind)));
+      }
+
+      function hhText(m, kind) {
+        return m is map && (
+          (kind == 'reminder' && m.keys().hasOnly(['title', 'body']) && hhStr(m, 'title', 1, 120) && hhOptStr(m, 'body', 500))
+          || (kind == 'todo' && m.keys().hasOnly(['title', 'detail', 'done', 'cancel']) && hhOptStr(m, 'title', 120)
+            && hhOptStr(m, 'detail', 200) && hhOptStr(m, 'done', 24) && hhOptStr(m, 'cancel', 24))
+          || (kind == 'agenda' && m.keys().hasOnly(['title', 'detail']) && hhOptStr(m, 'title', 120) && hhOptStr(m, 'detail', 200)));
+      }
+
       //
       // Reminders and agenda items are worked out from each app's data on whichever device opens
       // it, the shared tablet included, so helpers and kids keep the open ones in step too: any
@@ -1027,10 +1057,11 @@ service cloud.firestore {
         allow read: if readable();
         allow delete: if openDerivedRemoval();
         allow create, update: if openDerived()
-          && request.resource.data.keys().hasOnly(['app', 'title', 'body', 'at', 'url', 'recipients', 'ref', 'private', 'sent', 'sentAt', 'createdAt', 'by'])
+          && request.resource.data.keys().hasOnly(['app', 'title', 'body', 'texts', 'at', 'url', 'recipients', 'ref', 'private', 'sent', 'sentAt', 'createdAt', 'by'])
           && hhStr(request.resource.data, 'app', 1, 40)
           && hhStr(request.resource.data, 'title', 1, 120)
           && hhStr(request.resource.data, 'body', 0, 500)
+          && hhTexts(request.resource.data, 'reminder')
           && request.resource.data.at is int
           && hhStr(request.resource.data, 'url', 1, 2000)
           && request.resource.data.url.matches('https://.*')
@@ -1053,7 +1084,8 @@ service cloud.firestore {
         allow read: if readable();
         allow delete: if openDerivedRemoval();
         allow create, update: if openDerived()
-          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'texts', 'updatedAt', 'by'])
+          && hhTexts(request.resource.data, 'agenda')
           && hhStr(request.resource.data, 'app', 1, 40)
           && hhStr(request.resource.data, 'ref', 1, 200)
           && request.resource.data.kind in ['appointment', 'due', 'renewal', 'bill', 'birthday', 'medicine', 'feeding', 'task', 'other']
@@ -1092,7 +1124,8 @@ service cloud.firestore {
         allow read: if readable();
         allow delete: if openDerivedRemoval();
         allow create, update: if openDerived()
-          && request.resource.data.keys().hasOnly(['app', 'ref', 'title', 'detail', 'createdAt', 'due', 'who', 'url', 'status', 'private', 'owner', 'done', 'cancel', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['app', 'ref', 'title', 'detail', 'createdAt', 'due', 'who', 'url', 'status', 'private', 'owner', 'done', 'cancel', 'texts', 'updatedAt', 'by'])
+          && hhTexts(request.resource.data, 'todo')
           && hhStr(request.resource.data, 'app', 1, 40)
           && request.resource.data.app.matches('[a-z]{1,40}')
           && todoId.matches(request.resource.data.app + ':.{1,240}')
@@ -1272,7 +1305,8 @@ service cloud.firestore {
       match /personalAgenda/{itemId} {
         allow read, delete: if audienceRead();
         allow create, update: if audienceWrite()
-          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'audience', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'texts', 'audience', 'updatedAt', 'by'])
+          && hhTexts(request.resource.data, 'agenda')
           && hhStr(request.resource.data, 'app', 1, 40)
           && hhStr(request.resource.data, 'ref', 1, 200)
           && request.resource.data.kind in ['appointment', 'due', 'renewal', 'bill', 'birthday', 'medicine', 'feeding', 'task', 'other']
@@ -1292,7 +1326,8 @@ service cloud.firestore {
       match /personalTodos/{todoId} {
         allow read, delete: if audienceRead();
         allow create, update: if audienceWrite()
-          && request.resource.data.keys().hasOnly(['app', 'ref', 'title', 'detail', 'createdAt', 'due', 'who', 'url', 'status', 'private', 'owner', 'done', 'cancel', 'audience', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['app', 'ref', 'title', 'detail', 'createdAt', 'due', 'who', 'url', 'status', 'private', 'owner', 'done', 'cancel', 'texts', 'audience', 'updatedAt', 'by'])
+          && hhTexts(request.resource.data, 'todo')
           && hhStr(request.resource.data, 'app', 1, 40)
           && request.resource.data.app.matches('[a-z]{1,40}')
           && todoId.matches(request.resource.data.app + ':.{1,240}')
@@ -1317,10 +1352,11 @@ service cloud.firestore {
         allow read, delete: if audienceRead();
         allow create, update: if audienceWrite()
           && (request.method == 'create' || resource.data.get('sent', false) == false || request.resource.data.get('sent', false) == true)
-          && request.resource.data.keys().hasOnly(['app', 'title', 'body', 'at', 'url', 'recipients', 'ref', 'private', 'audience', 'sent', 'sentAt', 'createdAt', 'by'])
+          && request.resource.data.keys().hasOnly(['app', 'title', 'body', 'texts', 'at', 'url', 'recipients', 'ref', 'private', 'audience', 'sent', 'sentAt', 'createdAt', 'by'])
           && hhStr(request.resource.data, 'app', 1, 40)
           && hhStr(request.resource.data, 'title', 1, 120)
           && hhStr(request.resource.data, 'body', 0, 500)
+          && hhTexts(request.resource.data, 'reminder')
           && request.resource.data.at is int
           && hhStr(request.resource.data, 'url', 1, 2000)
           && hhEmails(request.resource.data.recipients)
@@ -1333,13 +1369,15 @@ service cloud.firestore {
       }
 
       // Each member's Web Push subscriptions, one per device and app (@huishouden/pwa-kit/push;
-      // fields match PUSH_SUBSCRIPTION_FIELDS there). A member sees and manages only their own;
+      // fields match PUSH_SUBSCRIPTION_FIELDS there), with the device's language (`lang`), which the
+      // sender uses to pick a reminder's `texts`. A member sees and manages only their own;
       // the keys are read only by the shared sender (huishouden/notify, a service account).
       match /pushSubscriptions/{subId} {
         allow read, delete: if isMember() && resource.data.email == myEmail();
         allow create, update: if isMember()
           && (resource == null || resource.data.email == myEmail())
-          && request.resource.data.keys().hasOnly(['email', 'app', 'endpoint', 'keys', 'ua', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['email', 'app', 'endpoint', 'keys', 'ua', 'lang', 'createdAt'])
+          && (!('lang' in request.resource.data) || request.resource.data.lang in ['en', 'es', 'nl'])
           && request.resource.data.email == myEmail()
           && hhStr(request.resource.data, 'app', 1, 40)
           && hhStr(request.resource.data, 'endpoint', 1, 1000)
