@@ -22,6 +22,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: huishouden/pwa-kit/actions/leak-scan@v0
+      - uses: huishouden/pwa-kit/actions/license-check@v0 # PolyForm Shield 1.0.0 (pwa-kit STANDARD.md "License")
 
   # Every rule is proven against the Firestore emulator: allowed reads/writes succeed, the rest fail.
   test:
