@@ -609,14 +609,14 @@ describe('reminders with a source', () => {
     app: 'pet', title: 'Give Biscuit his tablet', body: '', at: 1700000000000, url: 'https://huishouden-pet.web.app/', recipients: 'all', private: false, source, sent: false, createdAt: 1, by, ...extra,
   });
 
-  it('only signed by whoever writes it, and never by a kid, so the sender can trust `by`', async () => {
+  it('only signed by whoever writes it, so the sender can trust `by`', async () => {
     await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/reminders/s1'), reminder(ALICE)));
     await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/reminders/s2'), reminder(BOB, { app: 'bills', private: true, source: { checks: [{ doc: 'bills/b1' }] } })));
     await assertSucceeds(setDoc(doc(as(HELEN), 'households/h1/reminders/s3'), reminder(HELEN)));
     // A member can't sign one as someone else (a reader of records they can't read).
     await assertFails(setDoc(doc(as(BOB), 'households/h1/reminders/s4'), reminder(ALICE)));
-    await assertFails(setDoc(doc(as(KIM), 'households/h1/reminders/s5'), reminder(KIM)));
-    await assertSucceeds(setDoc(doc(as(KIM), 'households/h1/reminders/s5'), (({ source: _s, ...rest }) => rest)(reminder(KIM))));
+    // A kid's device keeps its reminders in step with a source too; the sender ignores a kid's source.
+    await assertSucceeds(setDoc(doc(as(KIM), 'households/h1/reminders/s5'), reminder(KIM)));
     // A helper can't put a source on a staff member's open reminder while keeping their name on it.
     await seed('households/h1/reminders/open', (({ source: _s, ...rest }) => rest)(reminder(ALICE)));
     await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/open'), reminder(ALICE)));
@@ -634,7 +634,7 @@ describe('reminders with a source', () => {
     await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/t6'), reminder(HELEN, { source: { checks: [{ doc: 5 }] } })));
   });
 
-  it('personal reminders too: never a kid, always signed by the writer', async () => {
+  it('personal reminders too: signed by the writer (kids write none)', async () => {
     const personal = (by: string) => ({ ...reminder(by), recipients: [by], private: true, audience: [by] });
     await assertSucceeds(setDoc(doc(as(HELEN), 'households/h1/personalReminders/p1'), personal(HELEN)));
     await assertFails(setDoc(doc(as(KIM), 'households/h1/personalReminders/p2'), personal(KIM)));

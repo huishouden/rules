@@ -1206,7 +1206,7 @@ service cloud.firestore {
       // passing keeps it due. The sender (huishouden/notify) reads them with its service account
       // before sending and deletes a reminder whose records say it is done (a bill paid from the
       // portal). So a source never tells its writer anything they couldn't read: it is signed by
-      // the writer, never a kid; each check names a document in the reminder's own app's
+      // the writer (the sender ignores a kid's, so a kid's device may still write one); each check names a document in the reminder's own app's
       // collections (the kit's REMINDER_SOURCES; keep in step); a Health record only an admin or one
       // of the person's readers may name. The sender checks the same and, in each check, that the
       // conditions read only done fields.
@@ -1229,7 +1229,7 @@ service cloud.firestore {
         return !('source' in d) || (d.source is map && d.source.keys().hasOnly(['checks', 'any'])
           && cs is list && cs.size() >= 1 && cs.size() <= 8
           && d.source.get('any', false) is bool
-          && d.by == myEmail() && role() != 'kid'
+          && d.by == myEmail()
           && hhSourceDoc(d.app, cs[0])
           && (cs.size() < 2 || hhSourceDoc(d.app, cs[1]))
           && (cs.size() < 3 || hhSourceDoc(d.app, cs[2]))
