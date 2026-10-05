@@ -124,7 +124,7 @@ it doesn't name is a member, except the household's creator (first in `members`)
 | Set or remove the household's home (`home`, in their own name) | yes | yes | | |
 | Rename the household; settings, food preferences, portal layout, lists, cars, meal plan, medicine courses | yes | yes | | |
 | Read lists, chores, pets, baby, home, car, contacts and appointments (not Health visits) | yes | yes | yes | yes |
-| Add items and log feeds, sleep, diapers, meals, readings and visits | yes | yes | yes | yes |
+| Add items and log feeds, sleep, diapers, meals, readings and Home's service visits (not Health visits) | yes | yes | yes | yes |
 | Tick off anyone's item, chore, job, reminder or service, and Home's things to do before a regular event; end anyone's baby sleep | yes | yes | yes | yes |
 | Change or delete what someone else added | yes | yes | own only | own only |
 | Give pet medicine (dose logs) | yes | yes | if the course allows them | |

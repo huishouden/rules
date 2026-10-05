@@ -194,7 +194,7 @@ describe('health: visits', () => {
       await ok(allowed, getDoc(doc(as(who), `${V}/v1`)));
       await ok(allowed, getDocs(collection(as(who), V)));
     }
-    for (const [who, allowed] of [[ALICE, true], [BOB, true], [HELEN, false], [CAROL, false], [KIM, false]] as const) {
+    for (const [who, allowed] of [[ALICE, true], [BOB, true], [HELEN, false], [CAROL, false], [HANK, false], [KIM, false], [MALLORY, false]] as const) {
       await ok(allowed, getDoc(doc(as(who), `${P}/visitNotes/v1`)));
       await ok(allowed, getDocs(collection(as(who), `${P}/visitNotes`)));
     }
