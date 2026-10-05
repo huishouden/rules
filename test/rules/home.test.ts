@@ -140,4 +140,26 @@ describe('contacts on the map', () => {
     const { address: _a, ...noAddress } = vet(ALICE, { lat: 39.78, lng: -89.6 });
     await assertFails(at('c8', noAddress));
   });
+
+  it("an admin's or member's background lookup fills in a helper's contact, or marks it tried", async () => {
+    await seed('households/h1/contacts/old', vet(HELEN));
+    await seed('households/h1/contacts/none', vet(HELEN));
+    const ref = (who: string, id: string) => doc(as(who), `households/h1/contacts/${id}`);
+    for (const who of STAFF) {
+      await assertSucceeds(updateDoc(ref(PERSON[who], 'old'), { lat: 39.78, lng: -89.6 }));
+      await assertSucceeds(updateDoc(ref(PERSON[who], 'none'), { geoTried: 1_760_000_000_000 }));
+    }
+    // A helper changes only what they added, and a kid nothing of a helper's.
+    await assertFails(updateDoc(ref(HANK, 'none'), { geoTried: 1_760_000_000_001 }));
+    await assertFails(updateDoc(ref(KIM, 'none'), { geoTried: 1_760_000_000_001 }));
+  });
+
+  it('a lookup mark is a time, and only with an address', async () => {
+    await assertSucceeds(at('t1', vet(ALICE, { geoTried: 1_760_000_000_000 })));
+    await assertFails(at('t2', vet(ALICE, { geoTried: '2026-10-05' })));
+    await assertFails(at('t3', vet(ALICE, { geoTried: 0 })));
+    await assertFails(at('t4', vet(ALICE, { geoTried: 1.5 })));
+    const { address: _a, ...noAddress } = vet(ALICE, { geoTried: 1_760_000_000_000 });
+    await assertFails(at('t5', noAddress));
+  });
 });

@@ -1113,7 +1113,7 @@ service cloud.firestore {
         allow read: if readable();
         allow delete: if canRemove() && (staff() || openBefore());
         allow create, update: if writer([]) && privateFlag()
-          && request.resource.data.keys().hasOnly(['name', 'role', 'phone', 'email', 'website', 'address', 'lat', 'lng', 'mapsUrl', 'notes', 'apps', 'private', 'createdAt', 'updatedAt', 'by', 'via'])
+          && request.resource.data.keys().hasOnly(['name', 'role', 'phone', 'email', 'website', 'address', 'lat', 'lng', 'geoTried', 'mapsUrl', 'notes', 'apps', 'private', 'createdAt', 'updatedAt', 'by', 'via'])
           && viaOk(request.resource.data)
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
@@ -1128,6 +1128,10 @@ service cloud.firestore {
           && (!('lng' in request.resource.data) || ('lat' in request.resource.data
             && request.resource.data.lng is number && request.resource.data.lng >= -180 && request.resource.data.lng <= 180))
           && (('lng' in request.resource.data) == ('lat' in request.resource.data))
+          // When an admin's or member's app last looked the address up and the map had no match (ms),
+          // so the background backfill (@huishouden/pwa-kit/contacts) doesn't ask again for 30 days.
+          && (!('geoTried' in request.resource.data) || ('address' in request.resource.data
+            && request.resource.data.geoTried is int && request.resource.data.geoTried > 0))
           && optString(request.resource.data, 'role', 60)
           && optString(request.resource.data, 'phone', 40)
           && optString(request.resource.data, 'email', 120)
