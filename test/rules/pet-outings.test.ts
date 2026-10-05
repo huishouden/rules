@@ -183,6 +183,7 @@ describe('petOutings', () => {
     await assertSucceeds(setDoc(doc(db, `${H}/petOutings/extra`), { petId: 'p1', at: 5, pee: true, poop: false, by: HELEN, createdAt: 5 }));
     await assertSucceeds(setDoc(doc(db, `${H}/petOutings/walk`), { petId: 'p1', at: 5, walkMin: 30, note: 'Round the park', by: HELEN, createdAt: 5 }));
     await assertSucceeds(setDoc(doc(db, `${H}/petOutings/via`), outing(HELEN, { via: 'assistant' })));
+    await assertSucceeds(setDoc(doc(db, `${H}/petOutings/req`), outing(HELEN, { via: 'assistant', req: 'Ab3dEf7hIj0lMn9pQr2t' })));
   });
 
   it('refuses what the app never writes', async () => {
@@ -198,6 +199,8 @@ describe('petOutings', () => {
     await bad({ walkMin: 601 });
     await bad({ walkMin: 12.5 });
     await bad({ note: 'x'.repeat(201) });
+    await bad({ req: '' });
+    await bad({ req: 'x'.repeat(65) });
     await bad({ via: 'portal' });
     await bad({ color: 'brown' });
     await assertFails(setDoc(doc(db, `${H}/petOutings/o2`), { petId: 'p1', pee: true, by: ALICE, createdAt: 5 }));

@@ -1068,7 +1068,7 @@ service cloud.firestore {
         allow read: if isMember();
         allow delete: if canRemove();
         allow create, update: if writer([])
-          && request.resource.data.keys().hasOnly(['petId', 'slot', 'at', 'pee', 'poop', 'walkMin', 'note', 'by', 'createdAt', 'updatedAt', 'via'])
+          && request.resource.data.keys().hasOnly(['petId', 'slot', 'at', 'pee', 'poop', 'walkMin', 'note', 'req', 'by', 'createdAt', 'updatedAt', 'via'])
           && viaOk(request.resource.data)
           && petStr(request.resource.data, 'petId', 1, 128)
           && (!('slot' in request.resource.data) || petStr(request.resource.data, 'slot', 1, 40))
@@ -1077,6 +1077,8 @@ service cloud.firestore {
           && petOptBool(request.resource.data, 'poop')
           && petOptRange(request.resource.data, 'walkMin', 1, 600)
           && petOptStr(request.resource.data, 'note', 200)
+          // The assistant's request id on a slot's outing (pwa-kit pet_log_outing), so a retry finds it.
+          && (!('req' in request.resource.data) || petStr(request.resource.data, 'req', 1, 64))
           && petAuthored(request.resource.data);
       }
 
