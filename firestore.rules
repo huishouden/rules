@@ -1325,11 +1325,11 @@ service cloud.firestore {
           && request.resource.data.by == myEmail();
       }
 
-      // Health (huishouden/health): people's medicines. Everything about a person is readable only by
-      // the household's admins and the members in the person's `readers` (their carers, and the
-      // person themself when they are a member), never by kids, nor by members who don't care for
-      // them. Admins and member carers keep the person and their medicines; helper carers read and
-      // record doses. A person's medicines, doses and photo live under the person, so every check
+      // Health (huishouden/health): people's medicines and visits. Everything about a person is
+      // readable only by the household's admins and the members in the person's `readers` (their
+      // carers, and the person themself when they are a member), never by kids, nor by members who
+      // don't care for them. Admins and member carers keep the person, their medicines and visits;
+      // helper carers read, record doses, add visits and mark them, but never read a visit's notes. A person's medicines, doses and photo live under the person, so every check
       // reads the person document by its path (list queries included).
       function healthAdmin() {
         return isMember() && role() == 'admin';
@@ -1464,6 +1464,110 @@ service cloud.firestore {
             && optString(request.resource.data, 'note', 200)
             && hhStr(request.resource.data, 'by', 3, 254)
             && request.resource.data.createdAt is int;
+        }
+
+        // Visits (@huishouden/pwa-kit/visit): appointments with a doctor, a dentist, a lab. Every
+        // reader of the person reads them: a helper who takes someone along needs when, where and
+        // what to bring. Keepers add and change any; a helper carer adds their own and changes or
+        // removes only those. Any reader marks one Attended or Missed and answers its follow-up
+        // (the to-do's Booked or Not needed), touching only those fields. `by` is whoever added it;
+        // `markedBy` is always whoever made the mark (`visitSigned`). No title says only
+        // the kind (`visitTitle`), so no writer's language is stored.
+        function visitLeads(l) {
+          return l is list && l.size() <= 4
+            && (l.size() < 1 || (l[0] is int && l[0] >= 0 && l[0] <= 20160))
+            && (l.size() < 2 || (l[1] is int && l[1] >= 0 && l[1] <= 20160))
+            && (l.size() < 3 || (l[2] is int && l[2] >= 0 && l[2] <= 20160))
+            && (l.size() < 4 || (l[3] is int && l[3] >= 0 && l[3] <= 20160));
+        }
+
+        function visitMarks(d) {
+          return d.get('status', 'attended') in ['attended', 'missed']
+            && d.get('markedAt', 0) is int
+            && d.get('followUpDoneAt', 0) is int;
+        }
+
+        // A mark is signed by whoever made it: a new or changed mark carries the writer as `markedBy`
+        // and a time; a mark taken back leaves neither; an unchanged one keeps its signer.
+        function visitSigned(d, old) {
+          let changed = d.get('status', null) != old.get('status', null) || d.get('markedAt', null) != old.get('markedAt', null);
+          return changed
+            ? ('status' in d ? d.get('markedBy', '') == myEmail() && 'markedAt' in d : !('markedAt' in d) && !('markedBy' in d))
+            : d.get('markedBy', null) == old.get('markedBy', null);
+        }
+
+        function visitFollowUp(f) {
+          return f is map && f.keys().hasOnly(['every', 'unit'])
+            && f.every is int && f.every >= 1 && f.every <= 24 && f.unit in ['week', 'month'];
+        }
+
+        // Kept to as few expressions as it can be: a request may evaluate at most 1000.
+        function visitShape(d) {
+          let prep = d.get('prep', []);
+          let link = d.get('link', 'https://x');
+          let calendarLink = d.get('calendarLink', 'https://x');
+          let title = d.get('title', 'x');
+          let minutes = d.get('minutes', 60);
+          return d.get('personId', '') == personId
+            && d.keys().hasOnly(['personId', 'kind', 'title', 'at', 'allDay', 'minutes', 'contactId', 'location', 'link', 'prep', 'medList', 'remindBefore', 'followUp', 'followUpOf', 'followUpDoneAt', 'status', 'markedAt', 'markedBy', 'calendarEventId', 'calendarLink', 'createdAt', 'updatedAt', 'by', 'via'])
+            && d.get('via', 'assistant') == 'assistant'
+            && d.kind in ['checkup', 'specialist', 'dentist', 'eye', 'lab', 'vaccine', 'therapy', 'other']
+            && title is string && title.size() >= 1 && title.size() <= 120
+            && d.at is int
+            && d.get('allDay', false) is bool
+            && minutes is int && minutes >= 5 && minutes <= 1440
+            && d.get('contactId', '') is string && d.get('contactId', '').size() <= 128
+            && d.get('location', '') is string && d.get('location', '').size() <= 200
+            && link is string && link.size() <= 500 && link.matches('https://.+')
+            && prep is list && prep.size() <= 6 && prep.join('|').size() <= 490
+            && d.get('medList', false) is bool
+            && visitLeads(d.remindBefore)
+            && visitFollowUp(d.get('followUp', { 'every': 1, 'unit': 'week' }))
+            && d.get('followUpOf', '') is string && d.get('followUpOf', '').size() <= 128
+            && visitMarks(d)
+            && d.get('calendarEventId', '') is string && d.get('calendarEventId', '').size() <= 1024
+            && calendarLink is string && calendarLink.size() <= 2000 && calendarLink.matches('https://.+')
+            && d.createdAt is int
+            && d.get('updatedAt', 0) is int
+            && d.by is string && d.by.size() >= 3 && d.by.size() <= 254;
+        }
+
+        // Adding one: any reader, in their own name; marked, only by themself.
+        function visitCreate(d) {
+          let me = myEmail();
+          return d.by == me && visitSigned(d, {}) && healthReader(person()) && visitShape(d);
+        }
+
+        // Changing one: its keepers, or the helper who added it; `by` stays, `markedBy` stays or is the writer.
+        function visitEdit(d, old) {
+          let me = myEmail();
+          return d.by == old.by && visitSigned(d, old)
+            && (old.by == me ? healthReader(person()) : healthKeeper(person()))
+            && visitShape(d);
+        }
+
+        match /visits/{visitId} {
+          allow read: if healthReader(person());
+          allow delete: if healthKeeper(person()) || (healthReader(person()) && resource.data.by == myEmail());
+          allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'markedAt', 'markedBy', 'followUpDoneAt', 'updatedAt'])
+            && healthReader(person())
+            && visitMarks(request.resource.data)
+            && visitSigned(request.resource.data, resource.data)
+            && request.resource.data.get('updatedAt', 0) is int;
+          allow create: if visitCreate(request.resource.data);
+          allow update: if visitEdit(request.resource.data, resource.data);
+        }
+
+        // A visit's notes (what the doctor said), apart from the visit so only keepers read them.
+        match /visitNotes/{visitId} {
+          allow read, delete: if healthKeeper(person());
+          allow create, update: if healthKeeper(person())
+            && request.resource.data.get('personId', '') == personId
+            && request.resource.data.keys().hasOnly(['personId', 'text', 'updatedAt', 'by', 'via'])
+            && viaOk(request.resource.data)
+            && hhStr(request.resource.data, 'text', 0, 1000)
+            && request.resource.data.updatedAt is int
+            && request.resource.data.by == myEmail();
         }
       }
 

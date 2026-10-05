@@ -32,7 +32,7 @@ list (`keys().hasOnly([...])`), and type and size checks on each field.
 
 ## Health and items for named people only
 
-Health keeps people's medicines, which only the household's admins and the person's carers read:
+Health keeps people's medicines and visits, which only the household's admins, the person's carers and the person themself read:
 
 | Path | Fields |
 |---|---|
@@ -40,10 +40,25 @@ Health keeps people's medicines, which only the household's admins and the perso
 | `healthPeople/{person}/photo/avatar` | data (WebP or JPEG data URL), updatedAt, by |
 | `healthPeople/{person}/meds/{med}` | personId (the path's), name, strength, dose, doseAmount, doseUnit, asNeeded, times, everyDays, rule, minHours, maxPerDay, withFood, startDate, endDate, prescriberId, pharmacyId, refills, supply, supplyAt, refillOrderedAt, escalateMinutes, remind, notes, createdAt, updatedAt, by, via |
 | `healthPeople/{person}/doses/{dose}` | personId (the path's), medId, slot (`YYYY-MM-DDTHH:MM`, none when as needed), at, status (`given`, `skipped`), note, by, createdAt, via |
+| `healthPeople/{person}/visits/{visit}` | personId (the path's), kind (`checkup`, `specialist`, `dentist`, `eye`, `lab`, `vaccine`, `therapy`, `other`), title (none: the kind says it), at, allDay, minutes, contactId, location, link (https), prep (up to 6 lines), medList, remindBefore (up to 4 lead times in minutes, 0 to 20160), followUp (`{ every, unit: week or month }`), followUpOf, followUpDoneAt, status (`attended`, `missed`), markedAt, markedBy, calendarEventId, calendarLink, createdAt, updatedAt, by, via |
+| `healthPeople/{person}/visitNotes/{visit}` | personId (the path's), text (up to 1000), updatedAt, by, via |
 
 Everything under a person is checked against the person document by its path, so list queries
 work: admins list `healthPeople` whole, everyone else with `where('readers', 'array-contains', me)`.
 Kids never read health data, even if named.
+
+Who does what with a person's visits (`@huishouden/pwa-kit/visit`):
+
+| | Admins, member carers, the person (a member: they are in `readers`) | Helper carers | Other members, helpers, kids |
+|---|---|---|---|
+| Read a visit (when, where, doctor, what to bring) | yes | yes | no |
+| Add a visit | yes | in their own name | no |
+| Change or remove a visit | any | the ones they added | no |
+| Mark Attended or Missed, answer its follow-up | yes, signed as themself (`markedBy`) | yes, signed as themself, only those fields | no |
+| Read or write the notes (`visitNotes`) | yes | no | no |
+
+A helper who takes someone to the dentist needs the time, the place and "fasting from midnight";
+what the doctor said stays with the keepers. The notes never go into what Health publishes.
 
 `personalAgenda`, `personalTodos` and `personalReminders` hold the agenda items, to-dos and
 reminders for named members only (`@huishouden/pwa-kit/audience`): each names `audience`, and only
@@ -58,7 +73,7 @@ that signs in as them and writes under these same rules. It never uses a service
 
 - `via`: the records the connector creates may carry `via: 'assistant'`, and no other value. These
   are items, petFeedings, petDoses, petMedDoses, petAppointments, babyAppointments, carAppointments,
-  homeEvents, homeServiceLog, contacts, and Health's meds and doses.
+  homeEvents, homeServiceLog, contacts, and Health's meds, doses, visits and visit notes.
 - `profiles/{email}` also takes `lang` (`en`, `es` or `nl`) and `timeZone` (an IANA name). The
   connector answers in that language and counts days in that zone.
 - `connections/{grant}` is one connected assistant (`email`, `client`, `clientUri`, `createdAt`,
@@ -108,8 +123,8 @@ it doesn't name is a member, except the household's creator (first in `members`)
 | Read the household's home address (`home`) | yes | yes | yes | yes |
 | Set or remove the household's home (`home`, in their own name) | yes | yes | | |
 | Rename the household; settings, food preferences, portal layout, lists, cars, meal plan, medicine courses | yes | yes | | |
-| Read lists, chores, pets, baby, home, car, contacts and appointments | yes | yes | yes | yes |
-| Add items and log feeds, sleep, diapers, meals, readings and visits | yes | yes | yes | yes |
+| Read lists, chores, pets, baby, home, car, contacts and appointments (not Health visits) | yes | yes | yes | yes |
+| Add items and log feeds, sleep, diapers, meals, readings and Home's service visits (not Health visits) | yes | yes | yes | yes |
 | Tick off anyone's item, chore, job, reminder or service, and Home's things to do before a regular event; end anyone's baby sleep | yes | yes | yes | yes |
 | Change or delete what someone else added | yes | yes | own only | own only |
 | Give pet medicine (dose logs) | yes | yes | if the course allows them | |
@@ -117,8 +132,12 @@ it doesn't name is a member, except the household's creator (first in `members`)
 | Read or write a contact's pay details (`contactPay`) | yes | yes | | |
 | Read contacts, appointments and agenda items marked private | yes | yes | | |
 | Health: read a person, their medicines and doses | yes | if a carer (or it is them) | if a carer | |
-| Health: add or change a person and their medicines | yes | if a carer | | |
-| Health: record a dose given or skipped; mark a refill ordered | yes | if a carer | if a carer (change own doses only) | |
+| Health: add or change a person and their medicines | yes | if a carer (or it is them) | | |
+| Health: record a dose given or skipped; mark a refill ordered | yes | if a carer (or it is them) | if a carer (change own doses only) | |
+| Health: read a visit (when, where, doctor, what to bring) | yes | if a carer (or it is them) | if a carer | |
+| Health: add a visit; change or remove one | yes | if a carer (or it is them): any | if a carer: add, change own only | |
+| Health: mark a visit Attended or Missed, answer its follow-up | yes | if a carer (or it is them), signed as themself | if a carer, signed as themself | |
+| Health: read or write a visit's notes | yes | if a carer (or it is them) | | |
 | Personal agenda items, to-dos and reminders | if named in `audience` | if named | if named | |
 
 - Helpers and kids add records in their own name (`by` is their email) and may change or delete

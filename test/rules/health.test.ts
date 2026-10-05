@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
+import { collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
 
 // Health: one household with every role. Nan is looked after by Bob (a member) and Helen (a
 // helper); Alice is the admin. Carol is a member who doesn't care for Nan, Hank a helper who
@@ -173,6 +173,139 @@ describe('health: recording doses', () => {
     await assertFails(updateDoc(doc(as(BOB), `${P}/doses/d1`), { by: BOB }));
     await assertSucceeds(deleteDoc(doc(as(HELEN), `${P}/doses/d1`)));
     await assertSucceeds(deleteDoc(doc(as(BOB), `${P}/doses/b1`)));
+  });
+});
+
+const visit = (by: string, over: Record<string, unknown> = {}) => ({
+  personId: 'nan', kind: 'dentist', title: 'Cleaning', at: 1_936_000_000_000, contactId: 'c1', location: '12 Example Street', prep: ['Fasting from midnight'],
+  medList: true, remindBefore: [1440, 120], followUp: { every: 3, unit: 'month' }, createdAt: 1, by, ...over,
+});
+const V = `${P}/visits`;
+
+describe('health: visits', () => {
+  beforeEach(async () => {
+    await seed(`${V}/v1`, visit(BOB));
+    await seed(`${V}/h1`, visit(HELEN));
+    await seed(`${P}/visitNotes/v1`, { personId: 'nan', text: 'Cavity on the left; see again in 3 months.', updatedAt: 1, by: BOB });
+  });
+
+  it("everyone who reads the person reads the visits; only keepers read a visit's notes", async () => {
+    for (const [who, allowed] of [[ALICE, true], [BOB, true], [HELEN, true], [CAROL, false], [HANK, false], [KIM, false], [MALLORY, false]] as const) {
+      await ok(allowed, getDoc(doc(as(who), `${V}/v1`)));
+      await ok(allowed, getDocs(collection(as(who), V)));
+    }
+    for (const [who, allowed] of [[ALICE, true], [BOB, true], [HELEN, false], [CAROL, false], [HANK, false], [KIM, false], [MALLORY, false]] as const) {
+      await ok(allowed, getDoc(doc(as(who), `${P}/visitNotes/v1`)));
+      await ok(allowed, getDocs(collection(as(who), `${P}/visitNotes`)));
+    }
+  });
+
+  it('keepers and helper carers add visits in their own name; nobody else, and only the fields Health writes', async () => {
+    await assertSucceeds(setDoc(doc(as(ALICE), `${V}/a`), visit(ALICE)));
+    await assertSucceeds(setDoc(doc(as(BOB), `${V}/b`), visit(BOB, { allDay: true, minutes: 30, link: 'https://video.example.com/r/1', followUpOf: 'v1', calendarEventId: 'evt_1', calendarLink: 'https://calendar.example.com/e/1' })));
+    await assertSucceeds(setDoc(doc(as(HELEN), `${V}/c`), visit(HELEN)));
+    await assertSucceeds(setDoc(doc(as(BOB), `${V}/d`), visit(BOB, { via: 'assistant' })));
+    const { prep: _p, medList: _m, followUp: _f, contactId: _c, location: _l, title: _t, ...bare } = visit(BOB, { kind: 'other', remindBefore: [] });
+    await assertSucceeds(setDoc(doc(as(BOB), `${V}/e`), bare));
+    await assertFails(setDoc(doc(as(HELEN), `${V}/x`), visit(BOB)));
+    for (const who of [CAROL, HANK, KIM, MALLORY]) await assertFails(setDoc(doc(as(who), `${V}/x`), visit(who)));
+    for (const over of [
+      { kind: 'surgery' },
+      { title: '' },
+      { title: 'x'.repeat(121) },
+      { at: 'tomorrow' },
+      { personId: 'someone' },
+      { link: 'http://video.example.com' },
+      { minutes: 2 },
+      { remindBefore: [1440, 120, 60, 30, 10] },
+      { remindBefore: [-5] },
+      { remindBefore: ['1440'] },
+      { followUp: { every: 3, unit: 'year' } },
+      { followUp: { every: 30, unit: 'month' } },
+      { prep: 'Fasting' },
+      { prep: ['x'.repeat(500)] },
+      { status: 'cancelled' },
+      { via: 'email' },
+      { notes: 'Notes go in visitNotes' },
+      { status: 'attended', markedAt: 2, markedBy: ALICE },
+      { contactId: ['c1'] },
+      { title: 7 },
+    ]) {
+      await assertFails(setDoc(doc(as(BOB), `${V}/x`), visit(BOB, over)));
+    }
+    const { personId: _pid, ...noPerson } = visit(BOB);
+    await assertFails(setDoc(doc(as(BOB), `${V}/x`), noPerson));
+  });
+
+  it('a helper changes and removes only their own; keepers any, and `by` stays', async () => {
+    await assertSucceeds(updateDoc(doc(as(HELEN), `${V}/h1`), { title: 'Cleaning and check', updatedAt: 2 }));
+    await assertFails(updateDoc(doc(as(HELEN), `${V}/v1`), { title: 'Moved', updatedAt: 2 }));
+    await assertFails(updateDoc(doc(as(HELEN), `${V}/v1`), { at: 1_936_100_000_000, updatedAt: 2 }));
+    await assertSucceeds(updateDoc(doc(as(BOB), `${V}/h1`), { at: 1_936_100_000_000, updatedAt: 2 }));
+    await assertSucceeds(updateDoc(doc(as(ALICE), `${V}/v1`), { title: 'Moved', updatedAt: 3 }));
+    // Health writes the whole document on every save: every field at once stays within the rules' limits.
+    const full = { allDay: false, minutes: 90, link: 'https://video.example.com/r/1', followUpOf: 'v0', followUpDoneAt: 4, status: 'attended', markedAt: 4, markedBy: BOB, calendarEventId: 'evt_1', calendarLink: 'https://calendar.example.com/e/1', via: 'assistant', updatedAt: 4 };
+    await assertSucceeds(setDoc(doc(as(BOB), `${V}/h1`), visit(HELEN, { ...full, remindBefore: [10080, 1440, 120, 0], prep: ['Fasting from midnight', 'Bring the insurance card', 'Arrive 15 minutes early'] })));
+    await assertSucceeds(setDoc(doc(as(HELEN), `${V}/h1`), visit(HELEN, { ...full, remindBefore: [10080, 1440, 120, 0], updatedAt: 5 })));
+    await assertFails(updateDoc(doc(as(BOB), `${V}/h1`), { by: BOB }));
+    await assertFails(updateDoc(doc(as(BOB), `${V}/h1`), { title: 'Moved', status: 'attended', markedAt: 4, markedBy: ALICE, updatedAt: 4 }));
+    await assertSucceeds(updateDoc(doc(as(BOB), `${V}/h1`), { title: 'Moved', status: 'attended', markedAt: 4, markedBy: BOB, updatedAt: 4 }));
+    await assertSucceeds(updateDoc(doc(as(ALICE), `${V}/h1`), { title: 'Moved again', updatedAt: 5 }));
+    await assertFails(updateDoc(doc(as(CAROL), `${V}/v1`), { title: 'Nope' }));
+    await assertFails(deleteDoc(doc(as(HELEN), `${V}/v1`)));
+    await assertSucceeds(deleteDoc(doc(as(HELEN), `${V}/h1`)));
+    await assertSucceeds(deleteDoc(doc(as(BOB), `${V}/v1`)));
+  });
+
+  it('any reader marks a visit Attended or Missed as themself, undoes it, and answers the follow-up', async () => {
+    await assertSucceeds(updateDoc(doc(as(HELEN), `${V}/v1`), { status: 'attended', markedAt: 5, markedBy: HELEN, updatedAt: 5 }));
+    const unmarked = visit(BOB, { updatedAt: 6 });
+    await assertSucceeds(setDoc(doc(as(HELEN), `${V}/v1`), unmarked));
+    await assertFails(updateDoc(doc(as(HELEN), `${V}/v1`), { status: 'missed', markedAt: 7, markedBy: BOB, updatedAt: 7 }));
+    await assertFails(updateDoc(doc(as(HELEN), `${V}/v1`), { status: 'cancelled', markedAt: 7, markedBy: HELEN, updatedAt: 7 }));
+    await assertSucceeds(updateDoc(doc(as(HELEN), `${V}/v1`), { status: 'missed', markedAt: 7, markedBy: HELEN, updatedAt: 7 }));
+    await assertSucceeds(updateDoc(doc(as(HELEN), `${V}/v1`), { followUpDoneAt: 8, updatedAt: 8 }));
+    await assertFails(updateDoc(doc(as(CAROL), `${V}/v1`), { followUpDoneAt: 9, updatedAt: 9 }));
+    await assertFails(updateDoc(doc(as(KIM), `${V}/v1`), { status: 'attended', markedAt: 9, markedBy: KIM, updatedAt: 9 }));
+    for (const who of [CAROL, HANK, KIM, MALLORY]) {
+      await assertFails(updateDoc(doc(as(who), `${V}/v1`), { status: 'attended', markedAt: 10, markedBy: who, updatedAt: 10 }));
+      await assertFails(deleteDoc(doc(as(who), `${V}/v1`)));
+    }
+  });
+
+  it("a mark is always signed by whoever made it: never someone else's name, never none", async () => {
+    await seed(`${V}/m1`, visit(BOB, { status: 'attended', markedAt: 5, markedBy: BOB }));
+    // Changing the mark while keeping Bob as its signer, or with no signer: refused, on both paths.
+    await assertFails(updateDoc(doc(as(HELEN), `${V}/m1`), { status: 'missed', markedAt: 9, updatedAt: 9 }));
+    await assertFails(updateDoc(doc(as(HELEN), `${V}/m1`), { status: 'missed', markedAt: 9, markedBy: deleteField(), updatedAt: 9 }));
+    await assertFails(updateDoc(doc(as(ALICE), `${V}/m1`), { status: 'missed', markedAt: 9, updatedAt: 9 }));
+    await assertFails(updateDoc(doc(as(HELEN), `${V}/m1`), { status: 'missed', markedBy: HELEN, markedAt: deleteField(), updatedAt: 9 }));
+    // Taking the mark back leaves no time and no signer.
+    await assertFails(updateDoc(doc(as(HELEN), `${V}/m1`), { status: deleteField(), updatedAt: 9 }));
+    await assertSucceeds(updateDoc(doc(as(HELEN), `${V}/m1`), { status: deleteField(), markedAt: deleteField(), markedBy: deleteField(), updatedAt: 9 }));
+    await assertSucceeds(updateDoc(doc(as(HELEN), `${V}/m1`), { status: 'missed', markedAt: 10, markedBy: HELEN, updatedAt: 10 }));
+    // Other changes keep the signer as it is.
+    await assertSucceeds(updateDoc(doc(as(ALICE), `${V}/m1`), { title: 'Moved', updatedAt: 11 }));
+    await assertFails(updateDoc(doc(as(ALICE), `${V}/m1`), { title: 'Moved again', markedBy: ALICE, updatedAt: 12 }));
+    await assertFails(setDoc(doc(as(BOB), `${V}/m2`), visit(BOB, { status: 'attended', markedBy: BOB })));
+  });
+
+  it('keepers keep the notes in their own name; helpers never', async () => {
+    const note = (by: string, over: Record<string, unknown> = {}) => ({ personId: 'nan', text: 'Bring the X-ray next time.', updatedAt: 2, by, ...over });
+    await assertSucceeds(setDoc(doc(as(BOB), `${P}/visitNotes/v1`), note(BOB)));
+    await assertSucceeds(setDoc(doc(as(ALICE), `${P}/visitNotes/h1`), note(ALICE, { via: 'assistant' })));
+    await assertFails(setDoc(doc(as(HELEN), `${P}/visitNotes/h1`), note(HELEN)));
+    await assertFails(setDoc(doc(as(CAROL), `${P}/visitNotes/v1`), note(CAROL)));
+    await assertFails(setDoc(doc(as(BOB), `${P}/visitNotes/v1`), note(ALICE)));
+    await assertFails(setDoc(doc(as(BOB), `${P}/visitNotes/v1`), note(BOB, { text: 'x'.repeat(1001) })));
+    await assertFails(setDoc(doc(as(BOB), `${P}/visitNotes/v1`), note(BOB, { personId: 'someone' })));
+    await assertFails(setDoc(doc(as(BOB), `${P}/visitNotes/v1`), note(BOB, { title: 'x' })));
+    await assertFails(deleteDoc(doc(as(HELEN), `${P}/visitNotes/v1`)));
+    for (const who of [CAROL, HANK, KIM, MALLORY]) {
+      await assertFails(setDoc(doc(as(who), `${P}/visitNotes/v1`), note(who)));
+      await assertFails(deleteDoc(doc(as(who), `${P}/visitNotes/v1`)));
+    }
+    await assertSucceeds(deleteDoc(doc(as(BOB), `${P}/visitNotes/v1`)));
   });
 });
 
