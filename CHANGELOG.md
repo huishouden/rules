@@ -4,7 +4,7 @@
 
 ### Features
 
-* **pet:** outings (bathroom breaks and walks). `petOutingPlans/{petId}`, each pet's plan (with its meals, at set times or every few hours within waking hours; a daily poop minimum and how many days under it before the vet hint; reminders; a walk goal), set by admins and members and read by everyone in the household. `petOutings`, the outings logged (pee, poop, walk minutes, a note, the slot it was for), added by anyone in the household in their own name, changed or removed by admins and members or whoever added it; the connector may add them (`via: 'assistant'`). A Pet reminder's source may name both. Emulator tests for every role.
+* **pet:** outings (bathroom breaks and walks). `petOutingPlans/{petId}`, each pet's plan (with its meals, at set times or every few hours within waking hours; a daily poop minimum and how many days under it before the vet hint; reminders; a walk goal), set by admins and members and read by everyone in the household. `petOutings`, the outings logged (pee, poop, walk minutes, a note, the slot it was for), added by anyone in the household in their own name, changed or removed by admins and members or whoever added it; the connector may add them (`via: 'assistant'`). A Pet reminder's source may name both, so a slot's reminder is dropped unsent once an outing for that slot is logged. Emulator tests for every role.
 
 ## [1.2.0](https://github.com/huishouden/rules/compare/v1.1.0...v1.2.0) (2026-10-05)
 

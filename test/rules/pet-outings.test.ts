@@ -78,6 +78,11 @@ describe('petOutingPlans', () => {
     await expect(STAFF.includes(who), setDoc(doc(as(by), `${H}/petOutingPlans/p1`), plan(by)));
   });
 
+  it.each(EVERYONE)('%s changes an existing plan only as an admin or member', async (who) => {
+    await seed(`${H}/petOutingPlans/p1`, plan(ALICE));
+    await expect(STAFF.includes(who), updateDoc(doc(as(PERSON[who]), `${H}/petOutingPlans/p1`), { remind: false, updatedAt: 2 }));
+  });
+
   it.each(EVERYONE)('%s removes a plan only as an admin or member', async (who) => {
     await seed(`${H}/petOutingPlans/p1`, plan(ALICE));
     await expect(STAFF.includes(who), deleteDoc(doc(as(PERSON[who]), `${H}/petOutingPlans/p1`)));
@@ -131,6 +136,30 @@ describe('petOutings', () => {
   it('a helper or kid never logs one in someone else\'s name', async () => {
     await assertFails(setDoc(doc(as(HELEN), `${H}/petOutings/o1`), outing(ALICE)));
     await assertFails(setDoc(doc(as(KIM), `${H}/petOutings/o2`), outing(BOB)));
+  });
+
+  it.each(EVERYONE)('%s changes an outing someone else logged only as an admin or member', async (who) => {
+    await seed(`${H}/petOutings/o1`, outing(ALICE));
+    await expect(STAFF.includes(who), updateDoc(doc(as(PERSON[who]), `${H}/petOutings/o1`), { poop: false, updatedAt: 6 }));
+  });
+
+  it.each(EVERYONE)('%s removes an outing someone else logged only as an admin or member', async (who) => {
+    await seed(`${H}/petOutings/o1`, outing(ALICE));
+    await expect(STAFF.includes(who), deleteDoc(doc(as(PERSON[who]), `${H}/petOutings/o1`)));
+  });
+
+  it('a slot already logged by someone else is never overwritten by a helper or kid', async () => {
+    const id = `${H}/petOutings/out-p1-2031-05-14-meal-m1`;
+    await seed(id, outing(ALICE));
+    await assertFails(setDoc(doc(as(HELEN), id), outing(HELEN, { poop: false })));
+    await assertFails(setDoc(doc(as(KIM), id), outing(KIM)));
+    await assertSucceeds(setDoc(doc(as(BOB), id), outing(ALICE, { poop: false, updatedAt: 6 })));
+  });
+
+  it('a kid changes and removes their own outings', async () => {
+    await seed(`${H}/petOutings/mine`, outing(KIM));
+    await assertSucceeds(updateDoc(doc(as(KIM), `${H}/petOutings/mine`), { poop: false, updatedAt: 6 }));
+    await assertSucceeds(deleteDoc(doc(as(KIM), `${H}/petOutings/mine`)));
   });
 
   it('a helper changes and removes their own outings, not anyone else\'s', async () => {
