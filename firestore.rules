@@ -1471,7 +1471,7 @@ service cloud.firestore {
         // what to bring. Keepers add and change any; a helper carer adds their own and changes or
         // removes only those. Any reader marks one Attended or Missed and answers its follow-up
         // (the to-do's Booked or Not needed), touching only those fields. `by` is whoever added it;
-        // `markedBy` is always whoever marked it (kept as it was, or the writer). No title says only
+        // `markedBy` is always whoever made the mark (`visitSigned`). No title says only
         // the kind (`visitTitle`), so no writer's language is stored.
         function visitLeads(l) {
           return l is list && l.size() <= 4
@@ -1484,8 +1484,16 @@ service cloud.firestore {
         function visitMarks(d) {
           return d.get('status', 'attended') in ['attended', 'missed']
             && d.get('markedAt', 0) is int
-            && d.get('markedBy', 'x@x') is string && d.get('markedBy', 'x@x').size() <= 254
             && d.get('followUpDoneAt', 0) is int;
+        }
+
+        // A mark is signed by whoever made it: a new or changed mark carries the writer as `markedBy`
+        // and a time; a mark taken back leaves neither; an unchanged one keeps its signer.
+        function visitSigned(d, old) {
+          let changed = d.get('status', null) != old.get('status', null) || d.get('markedAt', null) != old.get('markedAt', null);
+          return changed
+            ? ('status' in d ? d.get('markedBy', '') == myEmail() && 'markedAt' in d : !('markedAt' in d) && !('markedBy' in d))
+            : d.get('markedBy', null) == old.get('markedBy', null);
         }
 
         function visitFollowUp(f) {
@@ -1527,13 +1535,13 @@ service cloud.firestore {
         // Adding one: any reader, in their own name; marked, only by themself.
         function visitCreate(d) {
           let me = myEmail();
-          return d.by == me && d.get('markedBy', me) == me && healthReader(person()) && visitShape(d);
+          return d.by == me && visitSigned(d, {}) && healthReader(person()) && visitShape(d);
         }
 
         // Changing one: its keepers, or the helper who added it; `by` stays, `markedBy` stays or is the writer.
         function visitEdit(d, old) {
           let me = myEmail();
-          return d.by == old.by && d.get('markedBy', me) in [me, old.get('markedBy', '')]
+          return d.by == old.by && visitSigned(d, old)
             && (old.by == me ? healthReader(person()) : healthKeeper(person()))
             && visitShape(d);
         }
@@ -1544,7 +1552,7 @@ service cloud.firestore {
           allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'markedAt', 'markedBy', 'followUpDoneAt', 'updatedAt'])
             && healthReader(person())
             && visitMarks(request.resource.data)
-            && request.resource.data.get('markedBy', myEmail()) in [myEmail(), resource.data.get('markedBy', '')]
+            && visitSigned(request.resource.data, resource.data)
             && request.resource.data.get('updatedAt', 0) is int;
           allow create: if visitCreate(request.resource.data);
           allow update: if visitEdit(request.resource.data, resource.data);

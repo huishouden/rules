@@ -32,7 +32,7 @@ list (`keys().hasOnly([...])`), and type and size checks on each field.
 
 ## Health and items for named people only
 
-Health keeps people's medicines and visits, which only the household's admins and the person's carers read:
+Health keeps people's medicines and visits, which only the household's admins, the person's carers and the person themself read:
 
 | Path | Fields |
 |---|---|
@@ -49,12 +49,12 @@ Kids never read health data, even if named.
 
 Who does what with a person's visits (`@huishouden/pwa-kit/visit`):
 
-| | Admins, member carers, the person (a member) | Helper carers | Other members, helpers, kids |
+| | Admins, member carers, the person (a member: they are in `readers`) | Helper carers | Other members, helpers, kids |
 |---|---|---|---|
 | Read a visit (when, where, doctor, what to bring) | yes | yes | no |
 | Add a visit | yes | in their own name | no |
 | Change or remove a visit | any | the ones they added | no |
-| Mark Attended or Missed, answer its follow-up | yes, as themself (`markedBy`) | yes, as themself, only those fields | no |
+| Mark Attended or Missed, answer its follow-up | yes, signed as themself (`markedBy`) | yes, signed as themself, only those fields | no |
 | Read or write the notes (`visitNotes`) | yes | no | no |
 
 A helper who takes someone to the dentist needs the time, the place and "fasting from midnight";
@@ -123,7 +123,7 @@ it doesn't name is a member, except the household's creator (first in `members`)
 | Read the household's home address (`home`) | yes | yes | yes | yes |
 | Set or remove the household's home (`home`, in their own name) | yes | yes | | |
 | Rename the household; settings, food preferences, portal layout, lists, cars, meal plan, medicine courses | yes | yes | | |
-| Read lists, chores, pets, baby, home, car, contacts and appointments | yes | yes | yes | yes |
+| Read lists, chores, pets, baby, home, car, contacts and appointments (not Health visits) | yes | yes | yes | yes |
 | Add items and log feeds, sleep, diapers, meals, readings and visits | yes | yes | yes | yes |
 | Tick off anyone's item, chore, job, reminder or service, and Home's things to do before a regular event; end anyone's baby sleep | yes | yes | yes | yes |
 | Change or delete what someone else added | yes | yes | own only | own only |
@@ -132,8 +132,12 @@ it doesn't name is a member, except the household's creator (first in `members`)
 | Read or write a contact's pay details (`contactPay`) | yes | yes | | |
 | Read contacts, appointments and agenda items marked private | yes | yes | | |
 | Health: read a person, their medicines and doses | yes | if a carer (or it is them) | if a carer | |
-| Health: add or change a person and their medicines | yes | if a carer | | |
-| Health: record a dose given or skipped; mark a refill ordered | yes | if a carer | if a carer (change own doses only) | |
+| Health: add or change a person and their medicines | yes | if a carer (or it is them) | | |
+| Health: record a dose given or skipped; mark a refill ordered | yes | if a carer (or it is them) | if a carer (change own doses only) | |
+| Health: read a visit (when, where, doctor, what to bring) | yes | if a carer (or it is them) | if a carer | |
+| Health: add a visit; change or remove one | yes | if a carer (or it is them): any | if a carer: add, change own only | |
+| Health: mark a visit Attended or Missed, answer its follow-up | yes | if a carer (or it is them), signed as themself | if a carer, signed as themself | |
+| Health: read or write a visit's notes | yes | if a carer (or it is them) | | |
 | Personal agenda items, to-dos and reminders | if named in `audience` | if named | if named | |
 
 - Helpers and kids add records in their own name (`by` is their email) and may change or delete
