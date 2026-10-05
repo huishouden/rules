@@ -8,6 +8,9 @@ household's information visible only to its members.
   `households/{householdId}`; members are listed on the household document by lowercase email.
 - `firestore.indexes.json`: indexes the apps' queries need.
 - `test/rules/`: emulator tests proving each rule (allowed access succeeds, the rest fails).
+- `test/kit-fields.test.ts`: every `*_FIELDS` list `@huishouden/pwa-kit` exports matches the
+  `hasOnly` list of the rule it writes through, field for field (a new list fails until it is mapped
+  there or named as unchecked). Moving the kit pin (`hh dev bump-kit`) re-checks them.
 
 ## Changing rules
 
