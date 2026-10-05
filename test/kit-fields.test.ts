@@ -22,26 +22,39 @@ const rules = readFileSync(resolve(__dirname, '../firestore.rules'), 'utf8');
 const DATA = 'request.resource.data.keys()';
 const CHANGED = 'request.resource.data.diff(resource.data).affectedKeys()';
 
-const CONTRACT: { kit: string; fields: readonly string[]; after: string; on: string }[] = [
-  { kit: 'spending-core TRANSACTION_FIELDS', fields: spending.TRANSACTION_FIELDS, after: 'match /spendingTransactions/{txId} {', on: DATA },
-  { kit: 'contact-core CONTACT_PAY_FIELDS', fields: contact.CONTACT_PAY_FIELDS, after: 'match /contactPay/{contactId} {', on: DATA },
-  { kit: 'contact-core CONTACT_FIELDS', fields: contact.CONTACT_FIELDS, after: 'match /contacts/{contactId} {', on: DATA },
-  { kit: 'reminder-core REMINDER_FIELDS', fields: reminder.REMINDER_FIELDS, after: 'match /reminders/{reminderId} {', on: DATA },
-  { kit: 'agenda-core SERIES_FIELDS', fields: agenda.SERIES_FIELDS, after: 'function agendaExport(d) {', on: 'd.series.keys()' },
-  { kit: 'agenda-core AGENDA_FIELDS', fields: agenda.AGENDA_FIELDS, after: 'match /agenda/{itemId} {', on: DATA },
-  { kit: 'todo-core TODO_ACTION_FIELDS', fields: todo.TODO_ACTION_FIELDS, after: 'function todoActionShape(a) {', on: 'a.keys()' },
-  { kit: 'todo-core TODO_FIELDS', fields: todo.TODO_FIELDS, after: 'match /todos/{todoId} {', on: DATA },
-  { kit: 'visit VISIT_FIELDS', fields: visit.VISIT_FIELDS, after: 'function visitShape(d) {', on: 'd.keys()' },
-  { kit: 'visit VISIT_MARK_FIELDS', fields: visit.VISIT_MARK_FIELDS, after: 'match /visits/{visitId} {', on: CHANGED },
-  { kit: 'visit VISIT_NOTE_FIELDS', fields: visit.VISIT_NOTE_FIELDS, after: 'match /visitNotes/{visitId} {', on: DATA },
-  { kit: 'agenda-core PERSONAL_AGENDA_FIELDS', fields: agenda.PERSONAL_AGENDA_FIELDS, after: 'match /personalAgenda/{itemId} {', on: DATA },
-  { kit: 'todo-core PERSONAL_TODO_FIELDS', fields: todo.PERSONAL_TODO_FIELDS, after: 'match /personalTodos/{todoId} {', on: DATA },
-  { kit: 'reminder-core PERSONAL_REMINDER_FIELDS', fields: reminder.PERSONAL_REMINDER_FIELDS, after: 'match /personalReminders/{reminderId} {', on: DATA },
-  { kit: 'calendar-export CALENDAR_SETTINGS_FIELDS', fields: calendarExport.CALENDAR_SETTINGS_FIELDS, after: 'match /calendarSettings/{email} {', on: DATA },
-  { kit: 'push NOTIFICATION_PREFS_FIELDS', fields: push.NOTIFICATION_PREFS_FIELDS, after: 'match /notificationPrefs/{email} {', on: DATA },
-  { kit: 'push PUSH_SUBSCRIPTION_FIELDS', fields: push.PUSH_SUBSCRIPTION_FIELDS, after: 'match /pushSubscriptions/{subId} {', on: DATA },
-  { kit: 'food FOOD_FIELDS', fields: food.FOOD_FIELDS, after: "docId == 'food'", on: DATA },
+// Each list once, by module and name: the value compared is the one the name says.
+const KIT = {
+  'agenda-core': agenda, 'calendar-export': calendarExport, 'contact-core': contact, food, push,
+  'reminder-core': reminder, 'spending-core': spending, 'todo-core': todo, visit,
+} as const;
+type Module = keyof typeof KIT;
+
+const CONTRACT: { module: Module; name: string; after: string; on: string }[] = [
+  { module: 'spending-core', name: 'TRANSACTION_FIELDS', after: 'match /spendingTransactions/{txId} {', on: DATA },
+  { module: 'contact-core', name: 'CONTACT_PAY_FIELDS', after: 'match /contactPay/{contactId} {', on: DATA },
+  { module: 'contact-core', name: 'CONTACT_FIELDS', after: 'match /contacts/{contactId} {', on: DATA },
+  { module: 'reminder-core', name: 'REMINDER_FIELDS', after: 'match /reminders/{reminderId} {', on: DATA },
+  { module: 'agenda-core', name: 'SERIES_FIELDS', after: 'function agendaExport(d) {', on: 'd.series.keys()' },
+  { module: 'agenda-core', name: 'AGENDA_FIELDS', after: 'match /agenda/{itemId} {', on: DATA },
+  { module: 'todo-core', name: 'TODO_ACTION_FIELDS', after: 'function todoActionShape(a) {', on: 'a.keys()' },
+  { module: 'todo-core', name: 'TODO_FIELDS', after: 'match /todos/{todoId} {', on: DATA },
+  { module: 'visit', name: 'VISIT_FIELDS', after: 'function visitShape(d) {', on: 'd.keys()' },
+  { module: 'visit', name: 'VISIT_MARK_FIELDS', after: 'match /visits/{visitId} {', on: CHANGED },
+  { module: 'visit', name: 'VISIT_NOTE_FIELDS', after: 'match /visitNotes/{visitId} {', on: DATA },
+  { module: 'agenda-core', name: 'PERSONAL_AGENDA_FIELDS', after: 'match /personalAgenda/{itemId} {', on: DATA },
+  { module: 'todo-core', name: 'PERSONAL_TODO_FIELDS', after: 'match /personalTodos/{todoId} {', on: DATA },
+  { module: 'reminder-core', name: 'PERSONAL_REMINDER_FIELDS', after: 'match /personalReminders/{reminderId} {', on: DATA },
+  { module: 'calendar-export', name: 'CALENDAR_SETTINGS_FIELDS', after: 'match /calendarSettings/{email} {', on: DATA },
+  { module: 'push', name: 'NOTIFICATION_PREFS_FIELDS', after: 'match /notificationPrefs/{email} {', on: DATA },
+  { module: 'push', name: 'PUSH_SUBSCRIPTION_FIELDS', after: 'match /pushSubscriptions/{subId} {', on: DATA },
+  { module: 'food', name: 'FOOD_FIELDS', after: "docId == 'food'", on: DATA },
 ];
+
+const fieldsOf = (module: Module, name: string): readonly string[] => {
+  const v = (KIT[module] as Record<string, unknown>)[name];
+  expect(Array.isArray(v), `${module} ${name} is an exported list`).toBe(true);
+  return v as readonly string[];
+};
 
 // Lists the rules don't check field by field, each with the reason.
 const UNCHECKED: Record<string, string> = {
@@ -66,13 +79,31 @@ function rulesList(after: string, on: string): string[] {
 }
 
 describe("the kit's field lists match the rules", () => {
-  it.each(CONTRACT)('$kit', ({ fields, after, on }) => {
-    expect([...rulesList(after, on)].sort()).toEqual([...fields].sort());
+  it.each(CONTRACT)('$module $name', ({ module, name, after, on }) => {
+    expect([...rulesList(after, on)].sort()).toEqual([...fieldsOf(module, name)].sort());
   });
 
   it('every *_FIELDS list the kit exports is checked here or named as unchecked', () => {
     expect(exported.length).toBeGreaterThan(0);
-    const covered = new Set([...CONTRACT.map((c) => c.kit), ...Object.keys(UNCHECKED)]);
+    const covered = new Set([...CONTRACT.map((c) => `${c.module} ${c.name}`), ...Object.keys(UNCHECKED)]);
     expect(exported.filter((k) => !covered.has(k))).toEqual([]);
+  });
+});
+
+// Agreeing is not enough: kit and rules could drift together. What the lists must keep regardless.
+describe('the privacy the lists carry', () => {
+  it('pay details never sit on the contact, which helpers and kids may read', () => {
+    const shared = contact.CONTACT_FIELDS.filter((f) => (contact.CONTACT_PAY_FIELDS as readonly string[]).includes(f));
+    expect(shared.sort()).toEqual(['by', 'updatedAt']);
+  });
+
+  it('every shared and personal agenda item, to-do, reminder and contact can be private', () => {
+    for (const list of [contact.CONTACT_FIELDS, agenda.AGENDA_FIELDS, todo.TODO_FIELDS, reminder.REMINDER_FIELDS,
+      agenda.PERSONAL_AGENDA_FIELDS, todo.PERSONAL_TODO_FIELDS, reminder.PERSONAL_REMINDER_FIELDS]) expect(list).toContain('private');
+  });
+
+  it('only the personal lists name an audience', () => {
+    for (const list of [agenda.PERSONAL_AGENDA_FIELDS, todo.PERSONAL_TODO_FIELDS, reminder.PERSONAL_REMINDER_FIELDS]) expect(list).toContain('audience');
+    for (const list of [agenda.AGENDA_FIELDS, todo.TODO_FIELDS, reminder.REMINDER_FIELDS]) expect(list).not.toContain('audience');
   });
 });
