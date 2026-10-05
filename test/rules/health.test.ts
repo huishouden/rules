@@ -360,6 +360,12 @@ describe('for named people only: personal agenda, to-dos and reminders', () => {
     await assertFails(setDoc(doc(as(CAROL), 'households/h1/personalReminders/s3'), reminder(CAROL, [CAROL], { recipients: [CAROL], source })));
     await assertSucceeds(setDoc(doc(as(CAROL), 'households/h1/personalReminders/s3'), reminder(CAROL, [CAROL], { recipients: [CAROL] })));
     await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/personalReminders/s4'), reminder(ALICE, [ALICE], { recipients: [ALICE], source })));
+    // Never on a shared reminder, which every member reads, even from a reader.
+    const shared = (({ audience: _a, ...rest }) => rest)(reminder(BOB, AUD, { source, private: false, recipients: [BOB] }));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/reminders/s7'), shared));
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/s8'), { ...shared, by: HELEN, recipients: [HELEN] }));
+    // A kid named among the readers never may (as healthReader).
+    await assertFails(setDoc(doc(as(KIM), 'households/h1/reminders/s9'), { ...shared, by: KIM, recipients: [KIM] }));
     // Only Health's own records: not another app's, not a person's notes.
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/s5'), reminder(BOB, AUD, { source: { checks: [{ doc: 'bills/b1' }] } })));
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/s6'), reminder(BOB, AUD, { source: { checks: [{ doc: 'healthPeople/nan' }] } })));

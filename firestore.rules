@@ -1207,10 +1207,10 @@ service cloud.firestore {
       // before sending and deletes a reminder whose records say it is done (a bill paid from the
       // portal). So a source never tells its writer anything they couldn't read: it is signed by
       // the writer (the sender ignores a kid's, so a kid's device may still write one); each check names a document in the reminder's own app's
-      // collections (the kit's REMINDER_SOURCES; keep in step); a Health record only an admin or one
-      // of the person's readers may name. The sender checks the same and, in each check, that the
+      // collections (the kit's REMINDER_SOURCES; keep in step); a Health record only on a personal
+      // reminder, named by an admin or a member or helper among the person's readers (healthReader). The sender checks the same and, in each check, that the
       // conditions read only done fields.
-      function hhSourceDoc(app, c) {
+      function hhSourceDoc(app, c, personal) {
         let id = '[^/]{1,200}';
         let docs = {
           'bills': 'bills/' + id,
@@ -1220,24 +1220,27 @@ service cloud.firestore {
           'home': '(homeEvents|homeEventPrep)/' + id
         };
         return c is map && c.get('doc', '') is string && c.doc.size() > 0 && c.doc.matches(docs.get(app, ''))
-          && (app != 'health' || role() == 'admin'
-            || myEmail() in get(/databases/$(database)/documents/households/$(householdId)/healthPeople/$(c.doc.split('/')[1])).data.readers);
+          && (app != 'health' || (personal && (role() == 'admin'
+            || (role() in ['member', 'helper']
+              && myEmail() in get(/databases/$(database)/documents/households/$(householdId)/healthPeople/$(c.doc.split('/')[1])).data.readers))));
       }
 
-      function hhReminderSource(d) {
+      // `personal`: a personalReminders document, which only its audience reads; a Health source is
+      // only ever on one, never on a shared reminder every member reads.
+      function hhReminderSource(d, personal) {
         let cs = d.get('source', {}).get('checks', []);
         return !('source' in d) || (d.source is map && d.source.keys().hasOnly(['checks', 'any'])
           && cs is list && cs.size() >= 1 && cs.size() <= 8
           && d.source.get('any', false) is bool
           && d.by == myEmail()
-          && hhSourceDoc(d.app, cs[0])
-          && (cs.size() < 2 || hhSourceDoc(d.app, cs[1]))
-          && (cs.size() < 3 || hhSourceDoc(d.app, cs[2]))
-          && (cs.size() < 4 || hhSourceDoc(d.app, cs[3]))
-          && (cs.size() < 5 || hhSourceDoc(d.app, cs[4]))
-          && (cs.size() < 6 || hhSourceDoc(d.app, cs[5]))
-          && (cs.size() < 7 || hhSourceDoc(d.app, cs[6]))
-          && (cs.size() < 8 || hhSourceDoc(d.app, cs[7])));
+          && hhSourceDoc(d.app, cs[0], personal)
+          && (cs.size() < 2 || hhSourceDoc(d.app, cs[1], personal))
+          && (cs.size() < 3 || hhSourceDoc(d.app, cs[2], personal))
+          && (cs.size() < 4 || hhSourceDoc(d.app, cs[3], personal))
+          && (cs.size() < 5 || hhSourceDoc(d.app, cs[4], personal))
+          && (cs.size() < 6 || hhSourceDoc(d.app, cs[5], personal))
+          && (cs.size() < 7 || hhSourceDoc(d.app, cs[6], personal))
+          && (cs.size() < 8 || hhSourceDoc(d.app, cs[7], personal)));
       }
 
       function openDerivedRemoval() {
@@ -1253,7 +1256,7 @@ service cloud.firestore {
           && hhStr(request.resource.data, 'title', 1, 120)
           && hhStr(request.resource.data, 'body', 0, 500)
           && hhTexts(request.resource.data, 'reminder')
-          && hhReminderSource(request.resource.data)
+          && hhReminderSource(request.resource.data, false)
           && request.resource.data.at is int
           && hhStr(request.resource.data, 'url', 1, 2000)
           && request.resource.data.url.matches('https://.*')
@@ -1684,7 +1687,7 @@ service cloud.firestore {
           && hhStr(request.resource.data, 'title', 1, 120)
           && hhStr(request.resource.data, 'body', 0, 500)
           && hhTexts(request.resource.data, 'reminder')
-          && hhReminderSource(request.resource.data)
+          && hhReminderSource(request.resource.data, true)
           && request.resource.data.at is int
           && hhStr(request.resource.data, 'url', 1, 2000)
           && hhEmails(request.resource.data.recipients)
