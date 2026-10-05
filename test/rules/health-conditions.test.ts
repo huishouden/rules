@@ -5,9 +5,10 @@ import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestE
 import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 
 // Health conditions: fewer readers than medicines. Nan is looked after by Bob (a member) and Helen
-// (a helper); Alice is the admin. Hank is a helper who is himself a person in Health (his own
-// email on his record). Carol is a member who doesn't care for Nan, Kim a kid listed as a carer by
-// mistake, Mallory in no household. All invented.
+// (a helper); Alice is the admin. Carol is a member who is herself a person in Health (her own
+// email on her record) and doesn't care for Nan; Hank a helper and Kim a kid who are each a person
+// too (their own email on their record), Kim also listed as Nan's carer by mistake; Mallory in no
+// household. All invented.
 const ALICE = 'alice@example.com';
 const BOB = 'bob@example.com';
 const CAROL = 'carol@example.com';
@@ -20,6 +21,8 @@ const ROLES = { [HELEN]: 'helper', [HANK]: 'helper', [KIM]: 'kid' };
 
 const P = 'households/h1/healthPeople/nan';
 const HP = 'households/h1/healthPeople/hank';
+const CP = 'households/h1/healthPeople/carol';
+const KP = 'households/h1/healthPeople/kim';
 const C = `${P}/conditions`;
 
 let env: RulesTestEnvironment;
@@ -35,8 +38,8 @@ afterAll(async () => {
 });
 
 const condition = (by: string, over: Record<string, unknown> = {}, personId = 'nan') => ({
-  personId, name: 'Cervical radiculopathy', icd10: 'M54.12', specialty: 'neurology', status: 'active', diagnosed: '2030-03', severity: 'moderate',
-  doctorId: 'c1', clinicId: 'c2', medIds: ['m1'], notes: 'Left arm, worse at night.', createdAt: 1, by, ...over,
+  personId, name: 'Example condition', icd10: 'A00.0', specialty: 'primary', status: 'active', diagnosed: '2030-03', severity: 'moderate',
+  doctorId: 'c1', clinicId: 'c2', medIds: ['m1'], notes: 'Example note.', createdAt: 1, by, ...over,
 });
 const visit = (by: string, over: Record<string, unknown> = {}) => ({
   personId: 'nan', kind: 'specialist', at: 1_936_000_000_000, remindBefore: [1440, 120], createdAt: 1, by, ...over,
@@ -55,6 +58,10 @@ beforeEach(async () => {
   await seed(HP, { name: 'Hank', email: HANK, carers: [], readers: [HANK], createdAt: 1, by: ALICE });
   await seed(`${C}/k1`, condition(BOB));
   await seed(`${HP}/conditions/k1`, condition(ALICE, {}, 'hank'));
+  await seed(CP, { name: 'Carol', email: CAROL, carers: [], readers: [CAROL], createdAt: 1, by: ALICE });
+  await seed(`${CP}/conditions/k1`, condition(ALICE, {}, 'carol'));
+  await seed(KP, { name: 'Kim', email: KIM, carers: [BOB], readers: [BOB, KIM], createdAt: 1, by: ALICE });
+  await seed(`${KP}/conditions/k1`, condition(ALICE, {}, 'kim'));
 });
 
 const as = (email: string) => env.authenticatedContext(email.split('@')[0], { email, email_verified: true }).firestore();
@@ -68,11 +75,26 @@ describe('health conditions: reading', () => {
     }
   });
 
-  it('the person reads their own, whatever their role (a helper here); nobody without a reason does', async () => {
-    await assertSucceeds(getDoc(doc(as(HANK), `${HP}/conditions/k1`)));
-    await assertSucceeds(getDocs(collection(as(HANK), `${HP}/conditions`)));
+  it('the person reads and keeps their own as a member; as a helper or a kid, never', async () => {
+    await assertSucceeds(getDoc(doc(as(CAROL), `${CP}/conditions/k1`)));
+    await assertSucceeds(getDocs(collection(as(CAROL), `${CP}/conditions`)));
+    await assertSucceeds(setDoc(doc(as(CAROL), `${CP}/conditions/own`), condition(CAROL, {}, 'carol')));
+    for (const [who, path] of [[HANK, HP], [KIM, KP]] as const) {
+      await assertFails(getDoc(doc(as(who), `${path}/conditions/k1`)));
+      await assertFails(getDocs(collection(as(who), `${path}/conditions`)));
+      await assertFails(setDoc(doc(as(who), `${path}/conditions/x`), condition(who, {}, path.split('/').pop())));
+      await assertFails(updateDoc(doc(as(who), `${path}/conditions/k1`), { name: 'Changed', updatedAt: 5, by: who }));
+      await assertFails(deleteDoc(doc(as(who), `${path}/conditions/k1`)));
+    }
     await assertSucceeds(getDoc(doc(as(ALICE), `${HP}/conditions/k1`)));
-    for (const who of [BOB, HELEN, CAROL, KIM, MALLORY]) await assertFails(getDoc(doc(as(who), `${HP}/conditions/k1`)));
+    for (const who of [BOB, HELEN, MALLORY]) await assertFails(getDoc(doc(as(who), `${HP}/conditions/k1`)));
+  });
+
+  it("a member carer can't open a person's conditions to a helper by naming the helper as the person", async () => {
+    await assertSucceeds(setDoc(doc(as(BOB), P), { name: 'Nan', email: HELEN, carers: [BOB, HELEN], readers: [BOB, HELEN], createdAt: 1, updatedAt: 5, by: BOB }));
+    await assertSucceeds(getDoc(doc(as(HELEN), P)));
+    await assertFails(getDoc(doc(as(HELEN), `${C}/k1`)));
+    await assertFails(getDocs(collection(as(HELEN), C)));
   });
 });
 
@@ -86,8 +108,6 @@ describe('health conditions: keeping', () => {
       await assertFails(updateDoc(doc(as(who), `${C}/k1`), { name: 'Changed', updatedAt: 5, by: who }));
       await assertFails(deleteDoc(doc(as(who), `${C}/k1`)));
     }
-    // Hank reads his own but, as a helper, doesn't keep it.
-    await assertFails(setDoc(doc(as(HANK), `${HP}/conditions/x`), condition(HANK, {}, 'hank')));
     await assertSucceeds(deleteDoc(doc(as(BOB), `${C}/k1`)));
   });
 
@@ -98,8 +118,8 @@ describe('health conditions: keeping', () => {
     for (const over of [
       { name: '' },
       { name: 'x'.repeat(121) },
-      { icd10: 'radiculopathy' },
-      { icd10: 'M54.12345' },
+      { icd10: 'example' },
+      { icd10: 'A00.00000' },
       { specialty: 'surgery' },
       { status: 'cured' },
       { diagnosed: '19' },

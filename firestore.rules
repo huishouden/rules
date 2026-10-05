@@ -1446,10 +1446,12 @@ service cloud.firestore {
         return healthAdmin() || (isMember() && role() == 'member' && myEmail() in p.readers);
       }
 
-      // Conditions (diagnoses) are for fewer people than medicines: the admins, the person's member
-      // carers, and the person themself (any role but kid). Helper carers never read one.
+      // Conditions (diagnoses) are for fewer people than medicines: the admins and the members in the
+      // person's `readers` (their member carers, and the person themself when a member). Helper
+      // carers never read one. Not "whoever the person's `email` names": a member carer writes that
+      // field, so it would let them open someone's diagnoses to a helper.
       function conditionReader(p) {
-        return healthKeeper(p) || (isMember() && role() != 'kid' && p.get('email', '') == myEmail());
+        return healthKeeper(p);
       }
 
       function healthSpecialty(v) {
