@@ -1201,16 +1201,19 @@ service cloud.firestore {
             && (request.method == 'create' || resource.data.get('sent', false) == false || request.resource.data.get('sent', false) == true));
       }
 
-      // What a reminder is about (@huishouden/pwa-kit/reminder-core `ReminderSource`): up to 8
+      // What a reminder is about (@huishouden/pwa-kit/reminder-source `ReminderSource`): up to 8
       // checks, each a document under the household and when it is still due, and whether any one
       // passing keeps it due. The sender (huishouden/notify) reads them with its service account
       // before sending and deletes a reminder whose records say it is done (a bill paid from the
-      // portal). It reads only the reminder's own app's collections and checks each check's shape
-      // itself; rules have no loops, so here only the outline is checked.
+      // portal). Rules have no loops, so the sender checks each check against the kit's
+      // REMINDER_SOURCES (only the app's own collections and done fields) and counts a source only
+      // when its writer may read those records (role, a Health person's readers). Here: the
+      // outline, and the writer is the one signed in and not a kid, so `by` can be trusted.
       function hhReminderSource(d) {
         return !('source' in d) || (d.source is map && d.source.keys().hasOnly(['checks', 'any'])
           && d.source.checks is list && d.source.checks.size() >= 1 && d.source.checks.size() <= 8
-          && d.source.get('any', false) is bool);
+          && d.source.get('any', false) is bool
+          && d.by == myEmail() && role() != 'kid');
       }
 
       function openDerivedRemoval() {

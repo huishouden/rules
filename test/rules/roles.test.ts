@@ -603,6 +603,34 @@ describe('agenda and reminders', () => {
   }
 });
 
+describe('reminders with a source', () => {
+  const source = { checks: [{ doc: 'petMedCourses/c1' }] };
+  const reminder = (by: string, extra: Record<string, unknown> = {}) => ({
+    app: 'pet', title: 'Give Biscuit his tablet', body: '', at: 1700000000000, url: 'https://huishouden-pet.web.app/', recipients: 'all', private: false, source, sent: false, createdAt: 1, by, ...extra,
+  });
+
+  it('only signed by whoever writes it, and never by a kid, so the sender can trust `by`', async () => {
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/reminders/s1'), reminder(ALICE)));
+    await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/reminders/s2'), reminder(BOB, { app: 'bills', private: true, source: { checks: [{ doc: 'bills/b1' }] } })));
+    await assertSucceeds(setDoc(doc(as(HELEN), 'households/h1/reminders/s3'), reminder(HELEN)));
+    // A member can't sign one as someone else (a reader of records they can't read).
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/reminders/s4'), reminder(ALICE)));
+    await assertFails(setDoc(doc(as(KIM), 'households/h1/reminders/s5'), reminder(KIM)));
+    await assertSucceeds(setDoc(doc(as(KIM), 'households/h1/reminders/s5'), (({ source: _s, ...rest }) => rest)(reminder(KIM))));
+    // A helper can't put a source on a staff member's open reminder while keeping their name on it.
+    await seed('households/h1/reminders/open', (({ source: _s, ...rest }) => rest)(reminder(ALICE)));
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/open'), reminder(ALICE)));
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/b1'), reminder(HELEN, { app: 'bills', private: true, source: { checks: [{ doc: 'bills/b1' }] } })));
+    await assertFails(setDoc(doc(as(MALLORY), 'households/h1/reminders/s6'), reminder(MALLORY)));
+  });
+
+  it('personal reminders too: never a kid, always signed by the writer', async () => {
+    const personal = (by: string) => ({ ...reminder(by), recipients: [by], private: true, audience: [by] });
+    await assertSucceeds(setDoc(doc(as(HELEN), 'households/h1/personalReminders/p1'), personal(HELEN)));
+    await assertFails(setDoc(doc(as(KIM), 'households/h1/personalReminders/p2'), personal(KIM)));
+  });
+});
+
 describe('reminders already sent', () => {
   it('can’t be re-armed by a helper; admins and members may resend', async () => {
     const sent = { app: 'pet', title: 'Dose', body: '', at: 1, url: 'https://huishouden-pet.web.app/', recipients: 'all', private: false, sent: true, sentAt: 2, createdAt: 1, by: ALICE };
