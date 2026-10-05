@@ -1470,7 +1470,9 @@ service cloud.firestore {
         // reader of the person reads them: a helper who takes someone along needs when, where and
         // what to bring. Keepers add and change any; a helper carer adds their own and changes or
         // removes only those. Any reader marks one Attended or Missed and answers its follow-up
-        // (the to-do's Booked or Not needed), touching only those fields. `by` is whoever added it.
+        // (the to-do's Booked or Not needed), touching only those fields. `by` is whoever added it;
+        // `markedBy` is always whoever marked it (kept as it was, or the writer). No title says only
+        // the kind (`visitTitle`), so no writer's language is stored.
         function visitLeads(l) {
           return l is list && l.size() <= 4
             && (l.size() < 1 || (l[0] is int && l[0] >= 0 && l[0] <= 20160))
@@ -1496,14 +1498,16 @@ service cloud.firestore {
           let prep = d.get('prep', []);
           let link = d.get('link', 'https://x');
           let calendarLink = d.get('calendarLink', 'https://x');
+          let title = d.get('title', 'x');
+          let minutes = d.get('minutes', 60);
           return d.get('personId', '') == personId
             && d.keys().hasOnly(['personId', 'kind', 'title', 'at', 'allDay', 'minutes', 'contactId', 'location', 'link', 'prep', 'medList', 'remindBefore', 'followUp', 'followUpOf', 'followUpDoneAt', 'status', 'markedAt', 'markedBy', 'calendarEventId', 'calendarLink', 'createdAt', 'updatedAt', 'by', 'via'])
             && d.get('via', 'assistant') == 'assistant'
             && d.kind in ['checkup', 'specialist', 'dentist', 'eye', 'lab', 'vaccine', 'therapy', 'other']
-            && d.title is string && d.title.size() >= 1 && d.title.size() <= 120
+            && title is string && title.size() >= 1 && title.size() <= 120
             && d.at is int
             && d.get('allDay', false) is bool
-            && d.get('minutes', 60) is int && d.get('minutes', 60) >= 5 && d.get('minutes', 60) <= 1440
+            && minutes is int && minutes >= 5 && minutes <= 1440
             && d.get('contactId', '') is string && d.get('contactId', '').size() <= 128
             && d.get('location', '') is string && d.get('location', '').size() <= 200
             && link is string && link.size() <= 500 && link.matches('https://.+')
@@ -1520,6 +1524,20 @@ service cloud.firestore {
             && d.by is string && d.by.size() >= 3 && d.by.size() <= 254;
         }
 
+        // Adding one: any reader, in their own name; marked, only by themself.
+        function visitCreate(d) {
+          let me = myEmail();
+          return d.by == me && d.get('markedBy', me) == me && healthReader(person()) && visitShape(d);
+        }
+
+        // Changing one: its keepers, or the helper who added it; `by` stays, `markedBy` stays or is the writer.
+        function visitEdit(d, old) {
+          let me = myEmail();
+          return d.by == old.by && d.get('markedBy', me) in [me, old.get('markedBy', '')]
+            && (old.by == me ? healthReader(person()) : healthKeeper(person()))
+            && visitShape(d);
+        }
+
         match /visits/{visitId} {
           allow read: if healthReader(person());
           allow delete: if healthKeeper(person()) || (healthReader(person()) && resource.data.by == myEmail());
@@ -1528,10 +1546,8 @@ service cloud.firestore {
             && visitMarks(request.resource.data)
             && request.resource.data.get('markedBy', myEmail()) in [myEmail(), resource.data.get('markedBy', '')]
             && request.resource.data.get('updatedAt', 0) is int;
-          allow create, update: if healthReader(person())
-            && (request.method == 'create' ? request.resource.data.by == myEmail()
-              : (request.resource.data.by == resource.data.by && (resource.data.by == myEmail() || healthKeeper(person()))))
-            && visitShape(request.resource.data);
+          allow create: if visitCreate(request.resource.data);
+          allow update: if visitEdit(request.resource.data, resource.data);
         }
 
         // A visit's notes (what the doctor said), apart from the visit so only keepers read them.

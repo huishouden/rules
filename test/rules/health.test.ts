@@ -205,7 +205,7 @@ describe('health: visits', () => {
     await assertSucceeds(setDoc(doc(as(BOB), `${V}/b`), visit(BOB, { allDay: true, minutes: 30, link: 'https://video.example.com/r/1', followUpOf: 'v1', calendarEventId: 'evt_1', calendarLink: 'https://calendar.example.com/e/1' })));
     await assertSucceeds(setDoc(doc(as(HELEN), `${V}/c`), visit(HELEN)));
     await assertSucceeds(setDoc(doc(as(BOB), `${V}/d`), visit(BOB, { via: 'assistant' })));
-    const { prep: _p, medList: _m, followUp: _f, contactId: _c, location: _l, ...bare } = visit(BOB, { kind: 'other', remindBefore: [] });
+    const { prep: _p, medList: _m, followUp: _f, contactId: _c, location: _l, title: _t, ...bare } = visit(BOB, { kind: 'other', remindBefore: [] });
     await assertSucceeds(setDoc(doc(as(BOB), `${V}/e`), bare));
     await assertFails(setDoc(doc(as(HELEN), `${V}/x`), visit(BOB)));
     for (const who of [CAROL, HANK, KIM, MALLORY]) await assertFails(setDoc(doc(as(who), `${V}/x`), visit(who)));
@@ -227,6 +227,9 @@ describe('health: visits', () => {
       { status: 'cancelled' },
       { via: 'email' },
       { notes: 'Notes go in visitNotes' },
+      { status: 'attended', markedAt: 2, markedBy: ALICE },
+      { contactId: ['c1'] },
+      { title: 7 },
     ]) {
       await assertFails(setDoc(doc(as(BOB), `${V}/x`), visit(BOB, over)));
     }
@@ -245,6 +248,9 @@ describe('health: visits', () => {
     await assertSucceeds(setDoc(doc(as(BOB), `${V}/h1`), visit(HELEN, { ...full, remindBefore: [10080, 1440, 120, 0], prep: ['Fasting from midnight', 'Bring the insurance card', 'Arrive 15 minutes early'] })));
     await assertSucceeds(setDoc(doc(as(HELEN), `${V}/h1`), visit(HELEN, { ...full, markedBy: HELEN, remindBefore: [10080, 1440, 120, 0], updatedAt: 5 })));
     await assertFails(updateDoc(doc(as(BOB), `${V}/h1`), { by: BOB }));
+    await assertFails(updateDoc(doc(as(BOB), `${V}/h1`), { title: 'Moved', status: 'attended', markedAt: 4, markedBy: ALICE, updatedAt: 4 }));
+    await assertSucceeds(updateDoc(doc(as(BOB), `${V}/h1`), { title: 'Moved', status: 'attended', markedAt: 4, markedBy: BOB, updatedAt: 4 }));
+    await assertSucceeds(updateDoc(doc(as(ALICE), `${V}/h1`), { title: 'Moved again', updatedAt: 5 }));
     await assertFails(updateDoc(doc(as(CAROL), `${V}/v1`), { title: 'Nope' }));
     await assertFails(deleteDoc(doc(as(HELEN), `${V}/v1`)));
     await assertSucceeds(deleteDoc(doc(as(HELEN), `${V}/h1`)));
