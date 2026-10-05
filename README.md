@@ -32,7 +32,7 @@ list (`keys().hasOnly([...])`), and type and size checks on each field.
 
 ## Health and items for named people only
 
-Health keeps people's medicines, which only the household's admins and the person's carers read:
+Health keeps people's medicines and visits, which only the household's admins and the person's carers read:
 
 | Path | Fields |
 |---|---|
@@ -40,10 +40,25 @@ Health keeps people's medicines, which only the household's admins and the perso
 | `healthPeople/{person}/photo/avatar` | data (WebP or JPEG data URL), updatedAt, by |
 | `healthPeople/{person}/meds/{med}` | personId (the path's), name, strength, dose, doseAmount, doseUnit, asNeeded, times, everyDays, rule, minHours, maxPerDay, withFood, startDate, endDate, prescriberId, pharmacyId, refills, supply, supplyAt, refillOrderedAt, escalateMinutes, remind, notes, createdAt, updatedAt, by, via |
 | `healthPeople/{person}/doses/{dose}` | personId (the path's), medId, slot (`YYYY-MM-DDTHH:MM`, none when as needed), at, status (`given`, `skipped`), note, by, createdAt, via |
+| `healthPeople/{person}/visits/{visit}` | personId (the path's), kind (`checkup`, `specialist`, `dentist`, `eye`, `lab`, `vaccine`, `therapy`, `other`), title, at, allDay, minutes, contactId, location, link (https), prep (up to 6 lines), medList, remindBefore (up to 4 lead times in minutes, 0 to 20160), followUp (`{ every, unit: week or month }`), followUpOf, followUpDoneAt, status (`attended`, `missed`), markedAt, markedBy, calendarEventId, calendarLink, createdAt, updatedAt, by, via |
+| `healthPeople/{person}/visitNotes/{visit}` | personId (the path's), text (up to 1000), updatedAt, by, via |
 
 Everything under a person is checked against the person document by its path, so list queries
 work: admins list `healthPeople` whole, everyone else with `where('readers', 'array-contains', me)`.
 Kids never read health data, even if named.
+
+Who does what with a person's visits (`@huishouden/pwa-kit/visit`):
+
+| | Admins, member carers, the person (a member) | Helper carers | Other members, helpers, kids |
+|---|---|---|---|
+| Read a visit (when, where, doctor, what to bring) | yes | yes | no |
+| Add a visit | yes | in their own name | no |
+| Change or remove a visit | any | the ones they added | no |
+| Mark Attended or Missed, answer its follow-up | yes | yes, as themself (`markedBy`), only those fields | no |
+| Read or write the notes (`visitNotes`) | yes | no | no |
+
+A helper who takes someone to the dentist needs the time, the place and "fasting from midnight";
+what the doctor said stays with the keepers. The notes never go into what Health publishes.
 
 `personalAgenda`, `personalTodos` and `personalReminders` hold the agenda items, to-dos and
 reminders for named members only (`@huishouden/pwa-kit/audience`): each names `audience`, and only
@@ -58,7 +73,7 @@ that signs in as them and writes under these same rules. It never uses a service
 
 - `via`: the records the connector creates may carry `via: 'assistant'`, and no other value. These
   are items, petFeedings, petDoses, petMedDoses, petAppointments, babyAppointments, carAppointments,
-  homeEvents, homeServiceLog, contacts, and Health's meds and doses.
+  homeEvents, homeServiceLog, contacts, and Health's meds, doses, visits and visit notes.
 - `profiles/{email}` also takes `lang` (`en`, `es` or `nl`) and `timeZone` (an IANA name). The
   connector answers in that language and counts days in that zone.
 - `connections/{grant}` is one connected assistant (`email`, `client`, `clientUri`, `createdAt`,
