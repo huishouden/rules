@@ -352,6 +352,12 @@ describe('for named people only: personal agenda, to-dos and reminders', () => {
     await assertSucceeds(setDoc(doc(as(BOB), path), reminder(BOB, AUD, { sent: true, sentAt: 11, title: 'Medicine for Nan (late)' })));
   });
 
+  it('personalReminders: a source the sender checks, as on shared reminders', async () => {
+    const source = { checks: [{ doc: 'healthPeople/nan/doses/m1_0800', due: [{ field: 'status', notIn: ['given', 'skipped'] }], missing: 'due' }], any: true };
+    await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/personalReminders/s1'), reminder(BOB, AUD, { source })));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/s2'), reminder(BOB, AUD, { source: { checks: [] } })));
+  });
+
   it('personalTodos: the id is the app and ref', async () => {
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalTodos/pet:x'), todo(BOB, AUD)));
   });

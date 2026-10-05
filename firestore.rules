@@ -1201,6 +1201,18 @@ service cloud.firestore {
             && (request.method == 'create' || resource.data.get('sent', false) == false || request.resource.data.get('sent', false) == true));
       }
 
+      // What a reminder is about (@huishouden/pwa-kit/reminder-core `ReminderSource`): up to 8
+      // checks, each a document under the household and when it is still due, and whether any one
+      // passing keeps it due. The sender (huishouden/notify) reads them with its service account
+      // before sending and deletes a reminder whose records say it is done (a bill paid from the
+      // portal). It reads only the reminder's own app's collections and checks each check's shape
+      // itself; rules have no loops, so here only the outline is checked.
+      function hhReminderSource(d) {
+        return !('source' in d) || (d.source is map && d.source.keys().hasOnly(['checks', 'any'])
+          && d.source.checks is list && d.source.checks.size() >= 1 && d.source.checks.size() <= 8
+          && d.source.get('any', false) is bool);
+      }
+
       function openDerivedRemoval() {
         return staff() || (helping() && openBefore() && !moneyApp(resource.data.app));
       }
@@ -1209,11 +1221,12 @@ service cloud.firestore {
         allow read: if readable();
         allow delete: if openDerivedRemoval();
         allow create, update: if openDerived()
-          && request.resource.data.keys().hasOnly(['app', 'title', 'body', 'texts', 'at', 'url', 'recipients', 'ref', 'private', 'sent', 'sentAt', 'createdAt', 'by'])
+          && request.resource.data.keys().hasOnly(['app', 'title', 'body', 'texts', 'at', 'url', 'recipients', 'ref', 'private', 'source', 'sent', 'sentAt', 'createdAt', 'by'])
           && hhStr(request.resource.data, 'app', 1, 40)
           && hhStr(request.resource.data, 'title', 1, 120)
           && hhStr(request.resource.data, 'body', 0, 500)
           && hhTexts(request.resource.data, 'reminder')
+          && hhReminderSource(request.resource.data)
           && request.resource.data.at is int
           && hhStr(request.resource.data, 'url', 1, 2000)
           && request.resource.data.url.matches('https://.*')
@@ -1639,11 +1652,12 @@ service cloud.firestore {
         allow read, delete: if audienceRead();
         allow create, update: if audienceWrite()
           && (request.method == 'create' || resource.data.get('sent', false) == false || request.resource.data.get('sent', false) == true)
-          && request.resource.data.keys().hasOnly(['app', 'title', 'body', 'texts', 'at', 'url', 'recipients', 'ref', 'private', 'audience', 'sent', 'sentAt', 'createdAt', 'by'])
+          && request.resource.data.keys().hasOnly(['app', 'title', 'body', 'texts', 'at', 'url', 'recipients', 'ref', 'private', 'source', 'audience', 'sent', 'sentAt', 'createdAt', 'by'])
           && hhStr(request.resource.data, 'app', 1, 40)
           && hhStr(request.resource.data, 'title', 1, 120)
           && hhStr(request.resource.data, 'body', 0, 500)
           && hhTexts(request.resource.data, 'reminder')
+          && hhReminderSource(request.resource.data)
           && request.resource.data.at is int
           && hhStr(request.resource.data, 'url', 1, 2000)
           && hhEmails(request.resource.data.recipients)
