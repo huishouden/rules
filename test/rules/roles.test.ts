@@ -624,6 +624,16 @@ describe('reminders with a source', () => {
     await assertFails(setDoc(doc(as(MALLORY), 'households/h1/reminders/s6'), reminder(MALLORY)));
   });
 
+  it("names only the reminder's own app's records: a helper's can't reach Bills or Health", async () => {
+    const naming = (app: string, docPath: string) => reminder(HELEN, { app, source: { checks: [{ doc: 'items/i1' }, { doc: docPath }] } });
+    await assertSucceeds(setDoc(doc(as(HELEN), 'households/h1/reminders/t1'), naming('tasks', 'items/i2')));
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/t2'), naming('tasks', 'bills/b1')));
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/t3'), naming('tasks', 'healthPeople/p1/doses/d1')));
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/t4'), naming('tasks', 'items/i2/x/y')));
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/t5'), reminder(HELEN, { app: 'groceries', source: { checks: [{ doc: 'items/i1' }] } })));
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/t6'), reminder(HELEN, { source: { checks: [{ doc: 5 }] } })));
+  });
+
   it('personal reminders too: never a kid, always signed by the writer', async () => {
     const personal = (by: string) => ({ ...reminder(by), recipients: [by], private: true, audience: [by] });
     await assertSucceeds(setDoc(doc(as(HELEN), 'households/h1/personalReminders/p1'), personal(HELEN)));

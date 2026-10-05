@@ -356,9 +356,13 @@ describe('for named people only: personal agenda, to-dos and reminders', () => {
     const source = { checks: [{ doc: 'healthPeople/nan/doses/m1_0800', absent: true }], any: true };
     await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/personalReminders/s1'), reminder(BOB, AUD, { source })));
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/s2'), reminder(BOB, AUD, { source: { checks: [] } })));
-    // Carol (a member, not one of Nan's readers) may write one in her own audience; the sender
-    // ignores its source (pwa-kit sourceAllowed: Health records only from the person's readers).
-    await assertSucceeds(setDoc(doc(as(CAROL), 'households/h1/personalReminders/s3'), reminder(CAROL, [CAROL], { recipients: [CAROL], source })));
+    // Carol (a member, not one of Nan's readers) may not name Nan's records; without a source she may write it.
+    await assertFails(setDoc(doc(as(CAROL), 'households/h1/personalReminders/s3'), reminder(CAROL, [CAROL], { recipients: [CAROL], source })));
+    await assertSucceeds(setDoc(doc(as(CAROL), 'households/h1/personalReminders/s3'), reminder(CAROL, [CAROL], { recipients: [CAROL] })));
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/personalReminders/s4'), reminder(ALICE, [ALICE], { recipients: [ALICE], source })));
+    // Only Health's own records: not another app's, not a person's notes.
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/s5'), reminder(BOB, AUD, { source: { checks: [{ doc: 'bills/b1' }] } })));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/s6'), reminder(BOB, AUD, { source: { checks: [{ doc: 'healthPeople/nan' }] } })));
   });
 
   it('personalTodos: the id is the app and ref', async () => {
