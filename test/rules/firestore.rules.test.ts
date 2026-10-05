@@ -578,6 +578,39 @@ describe('household contents', () => {
     });
   });
 
+  describe('reminders: source', () => {
+    const reminder = {
+      app: 'bills',
+      title: 'Rent due today',
+      body: '',
+      at: 1700000000000,
+      url: 'https://huishouden-piekstra.web.app/bills/?bill=b1',
+      recipients: 'all',
+      ref: 'bills:bill:b1',
+      private: true,
+      sent: false,
+      createdAt: 1700000000000,
+      by: ALICE,
+    };
+    const source = { checks: [{ doc: 'bills/b1', due: [{ field: 'status', notIn: ['paid', 'credit'] }, { field: 'dismissed', notIn: [true] }, { field: 'due', in: ['2023-11-14'] }] }] };
+
+    it('carries what it is about, for the sender to check before sending', async () => {
+      await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/reminders/s1'), { ...reminder, source }));
+      await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/reminders/s2'), { ...reminder, source: { ...source, any: true } }));
+      await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/reminders/s3'), reminder));
+    });
+
+    it('only as a map of one to eight checks and an optional any', async () => {
+      const fails = (s: unknown) => assertFails(setDoc(doc(as(ALICE), 'households/h1/reminders/s4'), { ...reminder, source: s }));
+      await fails('bills/b1');
+      await fails({ checks: [] });
+      await fails({ checks: 'bills/b1' });
+      await fails({ checks: Array.from({ length: 9 }, () => ({ doc: 'bills/b1' })) });
+      await fails({ ...source, any: 'yes' });
+      await fails({ ...source, read: 'spendingTransactions/t1' });
+    });
+  });
+
   describe('agenda', () => {
     const item = {
       app: 'home',

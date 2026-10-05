@@ -352,6 +352,25 @@ describe('for named people only: personal agenda, to-dos and reminders', () => {
     await assertSucceeds(setDoc(doc(as(BOB), path), reminder(BOB, AUD, { sent: true, sentAt: 11, title: 'Medicine for Nan (late)' })));
   });
 
+  it('personalReminders: a source the sender checks, as on shared reminders', async () => {
+    const source = { checks: [{ doc: 'healthPeople/nan/doses/m1_0800', absent: true }], any: true };
+    await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/personalReminders/s1'), reminder(BOB, AUD, { source })));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/s2'), reminder(BOB, AUD, { source: { checks: [] } })));
+    // Carol (a member, not one of Nan's readers) may not name Nan's records; without a source she may write it.
+    await assertFails(setDoc(doc(as(CAROL), 'households/h1/personalReminders/s3'), reminder(CAROL, [CAROL], { recipients: [CAROL], source })));
+    await assertSucceeds(setDoc(doc(as(CAROL), 'households/h1/personalReminders/s3'), reminder(CAROL, [CAROL], { recipients: [CAROL] })));
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/personalReminders/s4'), reminder(ALICE, [ALICE], { recipients: [ALICE], source })));
+    // Never on a shared reminder, which every member reads, even from a reader.
+    const shared = (({ audience: _a, ...rest }) => rest)(reminder(BOB, AUD, { source, private: false, recipients: [BOB] }));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/reminders/s7'), shared));
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/s8'), { ...shared, by: HELEN, recipients: [HELEN] }));
+    // A kid named among the readers never may (as healthReader).
+    await assertFails(setDoc(doc(as(KIM), 'households/h1/reminders/s9'), { ...shared, by: KIM, recipients: [KIM] }));
+    // Only Health's own records: not another app's, not a person's notes.
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/s5'), reminder(BOB, AUD, { source: { checks: [{ doc: 'bills/b1' }] } })));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/s6'), reminder(BOB, AUD, { source: { checks: [{ doc: 'healthPeople/nan' }] } })));
+  });
+
   it('personalTodos: the id is the app and ref', async () => {
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalTodos/pet:x'), todo(BOB, AUD)));
   });
