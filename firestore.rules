@@ -846,7 +846,7 @@ service cloud.firestore {
       }
 
       // Huishouden Pet: pets, care reminders and the doses given, appointments, weights, records, the
-      // daily feeding board and medicine courses.
+      // daily feeding board, medicine courses, and outings (bathroom breaks and walks).
       // Field lists match FIELDS in huishouden/pet src/lib/model.ts; keep them in step.
       function petStr(d, k, min, max) {
         return d[k] is string && d[k].size() >= min && d[k].size() <= max;
@@ -1020,6 +1020,65 @@ service cloud.firestore {
           && request.resource.data.days <= 365
           && request.resource.data.withFood is bool
           && petOptStr(request.resource.data, 'notes', 500)
+          && petAuthored(request.resource.data);
+      }
+
+      // Outings: each pet's plan for bathroom breaks (with its meals, at set times or every few
+      // hours in waking hours; a daily poop minimum, reminders, a walk goal), keyed by the pet's id,
+      // and the outings logged. The plan is the household's setup: admins and members. Anyone in
+      // the household logs an outing in their own name (babysitters take the dog out); a slot's
+      // outing has the id `out-<petId>-<day>-<slot>`, so the app, the portal's To-do list and the
+      // connector write the same one.
+      function petHhmm(v) {
+        return v is string && v.matches('([01][0-9]|2[0-3]):[0-5][0-9]');
+      }
+      function petOptRange(d, k, min, max) {
+        return !(k in d) || (d[k] is int && d[k] >= min && d[k] <= max);
+      }
+      function petOptBool(d, k) {
+        return !(k in d) || d[k] is bool;
+      }
+      function petTimes(l) {
+        return l is list && l.size() <= 8
+          && (l.size() < 1 || petHhmm(l[0])) && (l.size() < 2 || petHhmm(l[1]))
+          && (l.size() < 3 || petHhmm(l[2])) && (l.size() < 4 || petHhmm(l[3]))
+          && (l.size() < 5 || petHhmm(l[4])) && (l.size() < 6 || petHhmm(l[5]))
+          && (l.size() < 7 || petHhmm(l[6])) && (l.size() < 8 || petHhmm(l[7]));
+      }
+
+      match /petOutingPlans/{petId} {
+        allow read: if isMember();
+        allow delete: if staff();
+        allow create, update: if staff()
+          && request.resource.data.keys().hasOnly(['on', 'mode', 'times', 'every', 'from', 'to', 'poopMin', 'flagDays', 'remind', 'walkGoal', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.on is bool
+          && request.resource.data.mode in ['meals', 'times', 'every']
+          && (!('times' in request.resource.data) || petTimes(request.resource.data.times))
+          && petOptRange(request.resource.data, 'every', 1, 12)
+          && (!('from' in request.resource.data) || petHhmm(request.resource.data.from))
+          && (!('to' in request.resource.data) || petHhmm(request.resource.data.to))
+          && petOptRange(request.resource.data, 'poopMin', 0, 10)
+          && petOptRange(request.resource.data, 'flagDays', 1, 14)
+          && petOptBool(request.resource.data, 'remind')
+          && petOptRange(request.resource.data, 'walkGoal', 0, 600)
+          && petAuthored(request.resource.data);
+      }
+
+      match /petOutings/{outingId} {
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer([])
+          && request.resource.data.keys().hasOnly(['petId', 'slot', 'at', 'pee', 'poop', 'walkMin', 'note', 'req', 'by', 'createdAt', 'updatedAt', 'via'])
+          && viaOk(request.resource.data)
+          && petStr(request.resource.data, 'petId', 1, 128)
+          && (!('slot' in request.resource.data) || petStr(request.resource.data, 'slot', 1, 40))
+          && request.resource.data.at is int
+          && petOptBool(request.resource.data, 'pee')
+          && petOptBool(request.resource.data, 'poop')
+          && petOptRange(request.resource.data, 'walkMin', 1, 600)
+          && petOptStr(request.resource.data, 'note', 200)
+          // The assistant's request id on a slot's outing (pwa-kit pet_log_outing), so a retry finds it.
+          && (!('req' in request.resource.data) || petStr(request.resource.data, 'req', 1, 64))
           && petAuthored(request.resource.data);
       }
 
@@ -1215,7 +1274,7 @@ service cloud.firestore {
         let docs = {
           'bills': 'bills/' + id,
           'tasks': 'items/' + id,
-          'pet': '(petProfiles|petMedCourses|petMedDoses|petMeals)/' + id,
+          'pet': '(petProfiles|petMedCourses|petMedDoses|petMeals|petOutingPlans|petOutings)/' + id,
           'health': 'healthPeople/' + id + '/(doses|meds)/' + id,
           'home': '(homeEvents|homeEventPrep)/' + id
         };
