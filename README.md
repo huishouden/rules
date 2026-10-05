@@ -35,7 +35,7 @@ list (`keys().hasOnly([...])`), and type and size checks on each field.
 
 ## Health and items for named people only
 
-Health keeps people's medicines and visits, which only the household's admins, the person's carers and the person themself read:
+Health keeps people's medicines, visits and conditions. Medicines and visits are read only by the household's admins, the person's carers and the person themself; conditions by fewer (below):
 
 | Path | Fields |
 |---|---|
@@ -43,8 +43,9 @@ Health keeps people's medicines and visits, which only the household's admins, t
 | `healthPeople/{person}/photo/avatar` | data (WebP or JPEG data URL), updatedAt, by |
 | `healthPeople/{person}/meds/{med}` | personId (the path's), name, strength, dose, doseAmount, doseUnit, asNeeded, times, everyDays, rule, minHours, maxPerDay, withFood, startDate, endDate, prescriberId, pharmacyId, refills, supply, supplyAt, refillOrderedAt, escalateMinutes, remind, notes, createdAt, updatedAt, by, via |
 | `healthPeople/{person}/doses/{dose}` | personId (the path's), medId, slot (`YYYY-MM-DDTHH:MM`, none when as needed), at, status (`given`, `skipped`), note, by, createdAt, via |
-| `healthPeople/{person}/visits/{visit}` | personId (the path's), kind (`checkup`, `specialist`, `dentist`, `eye`, `lab`, `vaccine`, `therapy`, `other`), title (none: the kind says it), at, allDay, minutes, contactId, location, link (https), prep (up to 6 lines), medList, remindBefore (up to 4 lead times in minutes, 0 to 20160), followUp (`{ every, unit: week or month }`), followUpOf, followUpDoneAt, status (`attended`, `missed`), markedAt, markedBy, calendarEventId, calendarLink, createdAt, updatedAt, by, via |
+| `healthPeople/{person}/visits/{visit}` | personId (the path's), kind (`checkup`, `specialist`, `dentist`, `eye`, `lab`, `vaccine`, `therapy`, `other`), title (none: the kind says it), at, allDay, minutes, contactId, location, link (https), prep (up to 6 lines), medList, remindBefore (up to 4 lead times in minutes, 0 to 20160), followUp (`{ every, unit: week or month }`), followUpOf, followUpDoneAt, status (`attended`, `missed`), markedAt, markedBy, conditionId, specialty (a medical area, as on a condition), calendarEventId, calendarLink, createdAt, updatedAt, by, via |
 | `healthPeople/{person}/visitNotes/{visit}` | personId (the path's), text (up to 1000), updatedAt, by, via |
+| `healthPeople/{person}/conditions/{condition}` | personId (the path's), name (1 to 120), icd10 (`M54.12`), specialty (`allergy`, `cardiology`, `dermatology`, `endocrinology`, `ent`, `gastroenterology`, `hemOnc`, `infectious`, `mentalHealth`, `nephrology`, `neurology`, `obgyn`, `ophthalmology`, `orthopedics`, `pulmonology`, `rheumatology`, `urology`, `primary`), status (`active`, `managed`, `resolved`), diagnosed and resolved (`2019`, `2019-03` or `2019-03-14`; resolved only when status is resolved), severity (`mild`, `moderate`, `severe`), doctorId, clinicId, place (up to 200), medIds (up to 20), notes (up to 1000), createdAt, updatedAt, by, via |
 
 Everything under a person is checked against the person document by its path, so list queries
 work: admins list `healthPeople` whole, everyone else with `where('readers', 'array-contains', me)`.
@@ -62,6 +63,12 @@ Who does what with a person's visits (`@huishouden/pwa-kit/visit`):
 
 A helper who takes someone to the dentist needs the time, the place and "fasting from midnight";
 what the doctor said stays with the keepers. The notes never go into what Health publishes.
+
+Conditions (`@huishouden/pwa-kit/condition`, `conditionReader`) are read by the admins, the
+person's member carers and the person themself (whatever their role, kids apart); helper carers
+never read one, not even its name. Admins and member carers add, change and remove them. A visit
+may carry a `conditionId`, which tells a helper carer only an id, and a `specialty`, which they
+read like the visit's title. Nothing about a condition is published.
 
 `personalAgenda`, `personalTodos` and `personalReminders` hold the agenda items, to-dos and
 reminders for named members only (`@huishouden/pwa-kit/audience`): each names `audience`, and only
@@ -141,6 +148,8 @@ it doesn't name is a member, except the household's creator (first in `members`)
 | Health: add a visit; change or remove one | yes | if a carer (or it is them): any | if a carer: add, change own only | |
 | Health: mark a visit Attended or Missed, answer its follow-up | yes | if a carer (or it is them), signed as themself | if a carer, signed as themself | |
 | Health: read or write a visit's notes | yes | if a carer (or it is them) | | |
+| Health: read a person's conditions | yes | if a carer (or it is them) | only their own | |
+| Health: add, change or remove a person's conditions | yes | if a carer (or it is them) | | |
 | Personal agenda items, to-dos and reminders | if named in `audience` | if named | if named | |
 
 - Helpers and kids add records in their own name (`by` is their email) and may change or delete

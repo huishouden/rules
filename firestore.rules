@@ -1431,7 +1431,8 @@ service cloud.firestore {
       // readable only by the household's admins and the members in the person's `readers` (their
       // carers, and the person themself when they are a member), never by kids, nor by members who
       // don't care for them. Admins and member carers keep the person, their medicines and visits;
-      // helper carers read, record doses, add visits and mark them, but never read a visit's notes. A person's medicines, doses and photo live under the person, so every check
+      // helper carers read, record doses, add visits and mark them, but never read a visit's notes nor
+      // any condition. A person's medicines, doses and photo live under the person, so every check
       // reads the person document by its path (list queries included).
       function healthAdmin() {
         return isMember() && role() == 'admin';
@@ -1443,6 +1444,21 @@ service cloud.firestore {
 
       function healthKeeper(p) {
         return healthAdmin() || (isMember() && role() == 'member' && myEmail() in p.readers);
+      }
+
+      // Conditions (diagnoses) are for fewer people than medicines: the admins, the person's member
+      // carers, and the person themself (any role but kid). Helper carers never read one.
+      function conditionReader(p) {
+        return healthKeeper(p) || (isMember() && role() != 'kid' && p.get('email', '') == myEmail());
+      }
+
+      function healthSpecialty(v) {
+        return v in ['allergy', 'cardiology', 'dermatology', 'endocrinology', 'ent', 'gastroenterology', 'hemOnc', 'infectious', 'mentalHealth', 'nephrology', 'neurology', 'obgyn', 'ophthalmology', 'orthopedics', 'pulmonology', 'rheumatology', 'urology', 'primary'];
+      }
+
+      // "2019", "2019-03" or "2019-03-14" (@huishouden/pwa-kit/condition `isPartialDate`).
+      function healthPartialDate(d, k) {
+        return !(k in d) || (d[k] is string && d[k].matches('[0-9]{4}(-(0[1-9]|1[0-2])(-(0[1-9]|[12][0-9]|3[01]))?)?'));
       }
 
       function healthYmd(d, k) {
@@ -1611,7 +1627,7 @@ service cloud.firestore {
           let title = d.get('title', 'x');
           let minutes = d.get('minutes', 60);
           return d.get('personId', '') == personId
-            && d.keys().hasOnly(['personId', 'kind', 'title', 'at', 'allDay', 'minutes', 'contactId', 'location', 'link', 'prep', 'medList', 'remindBefore', 'followUp', 'followUpOf', 'followUpDoneAt', 'status', 'markedAt', 'markedBy', 'calendarEventId', 'calendarLink', 'createdAt', 'updatedAt', 'by', 'via'])
+            && d.keys().hasOnly(['personId', 'kind', 'title', 'at', 'allDay', 'minutes', 'contactId', 'location', 'link', 'prep', 'medList', 'conditionId', 'specialty', 'remindBefore', 'followUp', 'followUpOf', 'followUpDoneAt', 'status', 'markedAt', 'markedBy', 'calendarEventId', 'calendarLink', 'createdAt', 'updatedAt', 'by', 'via'])
             && d.get('via', 'assistant') == 'assistant'
             && d.kind in ['checkup', 'specialist', 'dentist', 'eye', 'lab', 'vaccine', 'therapy', 'other']
             && title is string && title.size() >= 1 && title.size() <= 120
@@ -1623,6 +1639,8 @@ service cloud.firestore {
             && link is string && link.size() <= 500 && link.matches('https://.+')
             && prep is list && prep.size() <= 6 && prep.join('|').size() <= 490
             && d.get('medList', false) is bool
+            && d.get('conditionId', '') is string && d.get('conditionId', '').size() <= 128
+            && healthSpecialty(d.get('specialty', 'primary'))
             && visitLeads(d.remindBefore)
             && visitFollowUp(d.get('followUp', { 'every': 1, 'unit': 'week' }))
             && d.get('followUpOf', '') is string && d.get('followUpOf', '').size() <= 128
@@ -1670,6 +1688,36 @@ service cloud.firestore {
             && hhStr(request.resource.data, 'text', 0, 1000)
             && request.resource.data.updatedAt is int
             && request.resource.data.by == myEmail();
+        }
+
+        // Conditions (@huishouden/pwa-kit/condition): what the person has been diagnosed with, by
+        // medical area. Read by `conditionReader` only; admins and member carers keep them. A visit
+        // may name one (`conditionId`), which tells a helper carer nothing but an id.
+        function conditionShape(d) {
+          let medIds = d.get('medIds', []);
+          return d.get('personId', '') == personId
+            && d.keys().hasOnly(['personId', 'name', 'icd10', 'specialty', 'status', 'diagnosed', 'resolved', 'severity', 'doctorId', 'clinicId', 'place', 'medIds', 'notes', 'createdAt', 'updatedAt', 'by', 'via'])
+            && viaOk(d)
+            && hhStr(d, 'name', 1, 120)
+            && (!('icd10' in d) || (d.icd10 is string && d.icd10.matches('[A-Z][0-9][0-9A-Z]([.][0-9A-Z]{1,4})?')))
+            && healthSpecialty(d.specialty)
+            && d.status in ['active', 'managed', 'resolved']
+            && healthPartialDate(d, 'diagnosed')
+            && healthPartialDate(d, 'resolved')
+            && (!('resolved' in d) || d.status == 'resolved')
+            && d.get('severity', 'mild') in ['mild', 'moderate', 'severe']
+            && optString(d, 'doctorId', 128)
+            && optString(d, 'clinicId', 128)
+            && optString(d, 'place', 200)
+            && medIds is list && medIds.size() <= 20 && medIds.join('|').size() <= 2600
+            && optString(d, 'notes', 1000)
+            && healthAuthored(d);
+        }
+
+        match /conditions/{conditionId} {
+          allow read: if conditionReader(person());
+          allow delete: if healthKeeper(person());
+          allow create, update: if healthKeeper(person()) && conditionShape(request.resource.data);
         }
       }
 
