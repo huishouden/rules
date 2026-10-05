@@ -16,6 +16,6 @@
     "firebase-tools": "^15.32.1",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3",
-    "@huishouden/pwa-kit": "github:huishouden/pwa-kit#v0.104.0"
+    "@huishouden/pwa-kit": "github:huishouden/pwa-kit#v0.105.0"
   }
 }
