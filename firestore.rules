@@ -1276,7 +1276,9 @@ service cloud.firestore {
           'tasks': 'items/' + id,
           'pet': '(petProfiles|petMedCourses|petMedDoses|petMeals|petOutingPlans|petOutings)/' + id,
           'health': 'healthPeople/' + id + '/(doses|meds)/' + id,
-          'home': '(homeEvents|homeEventPrep)/' + id
+          'home': '(homeEvents|homeEventPrep)/' + id,
+          'baby': 'babyAppointments/' + id,
+          'car': '(carRenewals|carServiceItems)/' + id
         };
         return c is map && c.get('doc', '') is string && c.doc.size() > 0 && c.doc.matches(docs.get(app, ''))
           && (app != 'health' || (personal && (role() == 'admin'

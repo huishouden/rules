@@ -701,6 +701,9 @@ describe('household contents', () => {
       const db = as(ALICE);
       await assertSucceeds(setDoc(doc(db, 'households/h1/pushSubscriptions/s1'), sub(ALICE)));
       await assertSucceeds(setDoc(doc(db, 'households/h1/pushSubscriptions/s1'), { ...sub(ALICE), createdAt: 1700000600000 }));
+      // The suite-wide subscription (the portal's worker), then deleting one's own per-app copy when moving to it.
+      await assertSucceeds(setDoc(doc(db, 'households/h1/pushSubscriptions/s2'), { ...sub(ALICE), app: 'suite' }));
+      await assertSucceeds(deleteDoc(doc(db, 'households/h1/pushSubscriptions/s2')));
       await assertSucceeds(getDoc(doc(db, 'households/h1/pushSubscriptions/s1')));
       await assertSucceeds(getDocs(query(collection(db, 'households/h1/pushSubscriptions'), where('email', '==', ALICE))));
       await assertSucceeds(deleteDoc(doc(db, 'households/h1/pushSubscriptions/s1')));
