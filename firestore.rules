@@ -1281,6 +1281,8 @@ service cloud.firestore {
           'car': '(carRenewals|carServiceItems)/' + id
         };
         return c is map && c.get('doc', '') is string && c.doc.size() > 0 && c.doc.matches(docs.get(app, ''))
+          // Baby appointments can be private, which the sender reads whatever the flag: staff only (the kit's REMINDER_SOURCES).
+          && (app != 'baby' || role() in ['admin', 'member'])
           && (app != 'health' || (personal && (role() == 'admin'
             || (role() in ['member', 'helper']
               && myEmail() in get(/databases/$(database)/documents/households/$(householdId)/healthPeople/$(c.doc.split('/')[1])).data.readers))));
