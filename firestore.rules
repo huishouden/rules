@@ -1913,6 +1913,7 @@ service cloud.firestore {
           && (!('lang' in request.resource.data) || request.resource.data.lang in ['en', 'es', 'nl'])
           // A suite subscription limited to some apps (a per-app one moved to the suite's).
           && hhWords(request.resource.data.get('apps', []), 20, 40)
+          && (!('apps' in request.resource.data) || request.resource.data.app == 'suite')
           && request.resource.data.email == myEmail()
           && hhStr(request.resource.data, 'app', 1, 40)
           && hhStr(request.resource.data, 'endpoint', 1, 1000)
