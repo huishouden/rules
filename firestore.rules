@@ -1909,8 +1909,10 @@ service cloud.firestore {
         allow read, delete: if isMember() && resource.data.email == myEmail();
         allow create, update: if isMember()
           && (resource == null || resource.data.email == myEmail())
-          && request.resource.data.keys().hasOnly(['email', 'app', 'endpoint', 'keys', 'ua', 'lang', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['email', 'app', 'endpoint', 'keys', 'ua', 'apps', 'lang', 'createdAt'])
           && (!('lang' in request.resource.data) || request.resource.data.lang in ['en', 'es', 'nl'])
+          // A suite subscription limited to some apps (a per-app one moved to the suite's).
+          && hhWords(request.resource.data.get('apps', []), 20, 40)
           && request.resource.data.email == myEmail()
           && hhStr(request.resource.data, 'app', 1, 40)
           && hhStr(request.resource.data, 'endpoint', 1, 1000)
