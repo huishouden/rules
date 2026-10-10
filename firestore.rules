@@ -442,8 +442,9 @@ service cloud.firestore {
         allow read: if isMember();
         allow delete: if canRemove();
         allow create, update: if writer(['lastDate', 'lastOdometer', 'updatedAt'])
-          && request.resource.data.keys().hasOnly(['vehicleId', 'name', 'everyMonths', 'everyDistance', 'lastDate', 'lastOdometer', 'notes', 'pausedAt', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['vehicleId', 'name', 'everyMonths', 'everyDistance', 'lastDate', 'lastOdometer', 'notes', 'pausedAt', 'remind', 'createdAt', 'updatedAt', 'by'])
           // Paused: no longer comes due until resumed.
+          && (!('remind' in request.resource.data) || request.resource.data.remind is bool)
           && carInt(request.resource.data, 'pausedAt', 0, 9007199254740991)
           && carName(request.resource.data, 'vehicleId', 128)
           && carName(request.resource.data, 'name', 80)
@@ -473,7 +474,8 @@ service cloud.firestore {
         allow read: if isMember();
         allow delete: if canRemove();
         allow create, update: if writer(['dueDate', 'updatedAt'])
-          && request.resource.data.keys().hasOnly(['vehicleId', 'kind', 'name', 'dueDate', 'everyMonths', 'notes', 'closedAt', 'createdAt', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['vehicleId', 'kind', 'name', 'dueDate', 'everyMonths', 'notes', 'closedAt', 'remind', 'createdAt', 'updatedAt', 'by'])
+          && (!('remind' in request.resource.data) || request.resource.data.remind is bool)
           // Closed (handled, not renewing): no longer comes due, kept in the car's history.
           && carInt(request.resource.data, 'closedAt', 0, 9007199254740991)
           && carStr(request.resource.data, 'vehicleId', 128)
