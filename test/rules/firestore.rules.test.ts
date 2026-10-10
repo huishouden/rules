@@ -1308,6 +1308,15 @@ describe('attacks', () => {
     await assertSucceeds(appt({ calendarLink: 'https://calendar.google.com/calendar/event?eid=abc' }));
   });
 
+  it('keeps a baby appointment\'s reminder switch a boolean', async () => {
+    const appt = (data: Record<string, unknown>) => setDoc(doc(as(ALICE), 'households/h1/babyAppointments/a1'), { title: 'Checkup', at: 1, ...data });
+    await assertSucceeds(appt({}));
+    await assertSucceeds(appt({ remind: false }));
+    await assertSucceeds(appt({ remind: true }));
+    await assertFails(appt({ remind: 'no' }));
+    await assertFails(appt({ remind: 0 }));
+  });
+
   it('keeps pet photos to image data', async () => {
     const photo = (data: string) => setDoc(doc(as(ALICE), 'households/h1/petPhotos/p1'), { data, updatedAt: 1, by: ALICE });
     await assertFails(photo('data:image/svg+xml;base64,PHN2Zz48c2NyaXB0PmFsZXJ0KDEpPC9zY3JpcHQ+PC9zdmc+'));
