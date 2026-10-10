@@ -10,6 +10,7 @@ import * as reminder from '@huishouden/pwa-kit/reminder-core';
 import * as spending from '@huishouden/pwa-kit/spending-core';
 import * as todo from '@huishouden/pwa-kit/todo-core';
 import * as visit from '@huishouden/pwa-kit/visit';
+import * as condition from '@huishouden/pwa-kit/condition';
 
 // The kit's `*_FIELDS` lists against the rules' `hasOnly` lists, field for field. The kit writes a
 // document with exactly its list; the rules accept exactly theirs. When the two differ, a field the
@@ -25,7 +26,7 @@ const CHANGED = 'request.resource.data.diff(resource.data).affectedKeys()';
 // Each list once, by module and name: the value compared is the one the name says.
 const KIT = {
   'agenda-core': agenda, 'calendar-export': calendarExport, 'contact-core': contact, food, push,
-  'reminder-core': reminder, 'spending-core': spending, 'todo-core': todo, visit,
+  'reminder-core': reminder, 'spending-core': spending, 'todo-core': todo, visit, condition,
 } as const;
 type Module = keyof typeof KIT;
 
@@ -41,6 +42,7 @@ const CONTRACT: { module: Module; name: string; after: string; on: string }[] = 
   { module: 'visit', name: 'VISIT_FIELDS', after: 'function visitShape(d) {', on: 'd.keys()' },
   { module: 'visit', name: 'VISIT_MARK_FIELDS', after: 'match /visits/{visitId} {', on: CHANGED },
   { module: 'visit', name: 'VISIT_NOTE_FIELDS', after: 'match /visitNotes/{visitId} {', on: DATA },
+  { module: 'condition', name: 'CONDITION_FIELDS', after: 'function conditionShape(d) {', on: 'd.keys()' },
   { module: 'agenda-core', name: 'PERSONAL_AGENDA_FIELDS', after: 'match /personalAgenda/{itemId} {', on: DATA },
   { module: 'todo-core', name: 'PERSONAL_TODO_FIELDS', after: 'match /personalTodos/{todoId} {', on: DATA },
   { module: 'reminder-core', name: 'PERSONAL_REMINDER_FIELDS', after: 'match /personalReminders/{reminderId} {', on: DATA },
