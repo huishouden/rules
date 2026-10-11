@@ -84,7 +84,7 @@ that signs in as them and writes under these same rules. It never uses a service
 
 - `via`: the records the connector creates may carry `via: 'assistant'`, and no other value. These
   are items, petFeedings, petDoses, petMedDoses, petAppointments, babyAppointments, carAppointments,
-  homeEvents, homeServiceLog, contacts, and Health's meds, doses, visits and visit notes.
+  homeEvents, homeServiceLog, petRoutineLogs, contacts, and Health's meds, doses, visits and visit notes.
 - `profiles/{email}` also takes `lang` (`en`, `es` or `nl`) and `timeZone` (an IANA name). The
   connector answers in that language and counts days in that zone.
 - `connections/{grant}` is one connected assistant (`email`, `client`, `clientUri`, `createdAt`,

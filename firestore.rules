@@ -1087,7 +1087,8 @@ service cloud.firestore {
       // several pets (two cats, one box), and how it repeats: every N days, weeks or months counted
       // from when it was last done or fixed on the calendar, or on set weekdays. Setting them up is
       // for admins and members. Anyone in the household marks one done in their own name
-      // (a sitter scoops the box): the log of a due day has the id `rtn-<routineId>-<due day>`, so
+      // (a sitter scoops the box); as with outings, admins and members may write another's log
+      // so that Undo of a removal can put it back as it was: the log of a due day has the id `rtn-<routineId>-<due day>`, so
       // the app, the portal's To-do list and the connector write the same one, and a routine's
       // reminder is cancelled while that log is absent. Field lists match FIELDS in
       // huishouden/pet src/lib/model.ts and pet-routines in the kit.
