@@ -138,6 +138,8 @@ it doesn't name is a member, except the household's creator (first in `members`)
 | Add items and log feeds, sleep, diapers, meals, readings and Home's service visits (not Health visits) | yes | yes | yes | yes |
 | Tick off anyone's item, chore, job, reminder or service, and Home's things to do before a regular event; end anyone's baby sleep | yes | yes | yes | yes |
 | Change or delete what someone else added | yes | yes | own only | own only |
+| Baby's kick counter and contraction timer: read them, count and time (a helper adds one movement to, or ends, a session someone else started; deletes only their own) | yes | yes | yes | |
+| Baby's kick counter settings (the target and the daily reminder time): read; changing them is the settings row above | yes | yes | yes | |
 | Give pet medicine (dose logs) | yes | yes | if the course allows them | |
 | Read or write Spending and Bills | yes | yes | | |
 | Read or write a contact's pay details (`contactPay`) | yes | yes | | |

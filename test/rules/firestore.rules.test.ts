@@ -654,6 +654,12 @@ describe('household contents', () => {
       await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/reminders/s3'), reminder));
     });
 
+    it('Baby: a kick-count reminder names a session by the day, for staff only', async () => {
+      const kicks = { ...reminder, app: 'baby', ref: 'kicks:2031-05-14', source: { checks: [{ doc: 'babyKickSessions/2031-05-14', absent: true }] } };
+      await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/reminders/k1'), kicks));
+      await assertFails(setDoc(doc(as(ALICE), 'households/h1/reminders/k2'), { ...kicks, source: { checks: [{ doc: 'babyKickSettings/main', absent: true }] } }));
+    });
+
     it('only as a map of one to eight checks and an optional any', async () => {
       const fails = (s: unknown) => assertFails(setDoc(doc(as(ALICE), 'households/h1/reminders/s4'), { ...reminder, source: s }));
       await fails('bills/b1');
