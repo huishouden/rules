@@ -367,8 +367,10 @@ service cloud.firestore {
         allow read: if isMember();
         allow write: if staff()
           && docId == 'main'
-          && request.resource.data.keys().hasOnly(['name', 'dueDate', 'birthDate', 'updatedAt', 'updatedBy'])
-          && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 60));
+          && request.resource.data.keys().hasOnly(['name', 'dueDate', 'birthDate', 'contractionNote', 'updatedAt', 'updatedBy'])
+          && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 60))
+          // The provider's instructions for the contraction timer ("call if 6 in an hour").
+          && (!('contractionNote' in request.resource.data) || (request.resource.data.contractionNote is string && request.resource.data.contractionNote.size() <= 300));
       }
 
       // Anyone may end a sleep someone else started (the babysitter records the wake-up).

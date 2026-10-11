@@ -207,6 +207,10 @@ describe('household contents', () => {
   it('lets members edit the baby profile, checklists and appointments', async () => {
     await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/babyProfile/main'), { dueDate: '2031-03-01', updatedAt: 1 }));
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/babyProfile/other'), { dueDate: '2031-03-01' }));
+    const profile = doc(as(ALICE), 'households/h1/babyProfile/main');
+    await assertSucceeds(setDoc(profile, { dueDate: '2031-03-01', contractionNote: 'Call if 6 in an hour', updatedAt: 2 }));
+    await assertFails(setDoc(profile, { dueDate: '2031-03-01', contractionNote: 'x'.repeat(301), updatedAt: 3 }));
+    await assertFails(setDoc(profile, { dueDate: '2031-03-01', contractionNote: 5, updatedAt: 3 }));
     await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/babyChecklists/c1'), { list: 'hospital-bag', text: 'Charger', done: false }));
     await assertFails(setDoc(doc(as(BOB), 'households/h1/babyChecklists/c2'), { list: 'hospital-bag', text: '' }));
     await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/babyAppointments/a1'), { title: 'Checkup', at: 1700000000000 }));
