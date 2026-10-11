@@ -1050,6 +1050,37 @@ describe('babyKickSessions: the kick counter', () => {
     await assertFails(updateDoc(t, { taps: [1700000060000, 1700000070000], updatedAt: 2 }));
   });
 
+  it('a second device’s Start on a day already counted is refused, not an overwrite: by, start and createdAt never change', async () => {
+    await seed(`${col}/2031-05-14`, one(ALICE, { taps: [1700000060000] }));
+    // The same id, as another person's new session.
+    await assertFails(setDoc(doc(as(BOB), `${col}/2031-05-14`), one(BOB, { start: 1700000900000, createdAt: 9 })));
+    await assertFails(setDoc(doc(as(HELEN), `${col}/2031-05-14`), one(HELEN, { start: 1700000900000, createdAt: 9 })));
+    await assertFails(updateDoc(doc(as(BOB), `${col}/2031-05-14`), { by: BOB }));
+    await assertFails(updateDoc(doc(as(ALICE), `${col}/2031-05-14`), { start: 1700000000001 }));
+    await assertSucceeds(updateDoc(doc(as(BOB), `${col}/2031-05-14`), { note: 'a note', updatedAt: 2 }));
+  });
+
+  it('every session is signed: a helper only as themself; staff may also put back another’s (Undo), but never leave it unsigned', async () => {
+    await assertFails(setDoc(doc(as(HELEN), `${col}/s1`), one(ALICE)));
+    const { by: _by, ...unsigned } = one(BOB);
+    await assertFails(setDoc(doc(as(BOB), `${col}/s3`), unsigned));
+    await assertFails(setDoc(doc(as(BOB), `${col}/s5`), { ...one(BOB), by: '' }));
+    await assertFails(setDoc(doc(as(BOB), `${col}/s6`), { ...one(BOB), by: 5 }));
+    await assertSucceeds(setDoc(doc(as(BOB), `${col}/s4`), one(HELEN)));
+    await assertSucceeds(setDoc(doc(as(BOB), `${col}/s7`), one(BOB)));
+  });
+
+  it('an undo reopens a session with end null, for its starter and a member; a helper on someone else’s ended one may not', async () => {
+    await seed(`${col}/hers`, one(HELEN, { taps: [1700000060000, 1700000070000], end: 1700000080000 }));
+    await assertSucceeds(updateDoc(doc(as(HELEN), `${col}/hers`), { taps: [1700000060000], end: null, updatedAt: 2 }));
+    // Running again (end null), a helper may add a movement or end it.
+    await assertSucceeds(updateDoc(doc(as(HANK), `${col}/hers`), { taps: [1700000060000, 1700000090000], updatedAt: 3 }));
+    await assertSucceeds(updateDoc(doc(as(HANK), `${col}/hers`), { end: 1700000100000, updatedAt: 4 }));
+    await seed(`${col}/ended`, one(ALICE, { end: 1700000180000 }));
+    await assertFails(updateDoc(doc(as(HANK), `${col}/ended`), { end: null, updatedAt: 2 }));
+    await assertFails(setDoc(doc(as(BOB), `${col}/neg`), one(BOB, { end: 5 })));
+  });
+
   it('a helper undoes a tap on their own session, and a member on anyone’s', async () => {
     await seed(`${col}/hers`, one(HELEN, { taps: [1700000060000, 1700000070000] }));
     await assertSucceeds(updateDoc(doc(as(HELEN), `${col}/hers`), { taps: [1700000060000], updatedAt: 2 }));
