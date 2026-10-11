@@ -7,7 +7,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { deleteDoc, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 
 // Pet care routines: what to do for which pets and how it repeats (`petRoutines`, admins and
 // members) and the logs of a due day done (`petRoutineLogs`, anyone in the household in their own name). One household with every role: Alice created it (admin by being first), Bob is a member by
@@ -44,6 +44,7 @@ beforeEach(async () => {
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'households/h1'), { name: 'Home', members: MEMBERS, joined: MEMBERS, roles: ROLES, createdAt: 1 });
+    await setDoc(doc(ctx.firestore(), 'households/h1/petRoutines/r1'), { name: 'Scoop litter box', petIds: ['p1'], mode: 'fixed', every: 1, unit: 'day', since: '2031-01-01', createdAt: 1, by: ALICE });
   });
 });
 
@@ -138,8 +139,8 @@ describe('petRoutineLogs', () => {
   });
 
   it('a helper or kid never marks one done in someone else\'s name', async () => {
-    await assertFails(setDoc(doc(as(HELEN), `${H}/petRoutineLogs/l1`), log(ALICE)));
-    await assertFails(setDoc(doc(as(KIM), `${H}/petRoutineLogs/l2`), log(BOB)));
+    await assertFails(setDoc(doc(as(HELEN), `${H}/petRoutineLogs/rtn-r1-2031-01-06`), log(ALICE)));
+    await assertFails(setDoc(doc(as(KIM), `${H}/petRoutineLogs/rtn-r1-2031-01-06`), log(BOB)));
   });
 
   it.each(EVERYONE)('%s undoes a log someone else wrote only as an admin or member', async (who) => {
@@ -166,8 +167,8 @@ describe('petRoutineLogs', () => {
 
   it('takes one from the assistant, and refuses what the app never writes', async () => {
     const db = as(HELEN);
-    await assertSucceeds(setDoc(doc(db, `${H}/petRoutineLogs/via`), log(HELEN, { via: 'assistant' })));
-    const bad = (extra: Record<string, unknown>) => assertFails(setDoc(doc(db, `${H}/petRoutineLogs/x`), log(HELEN, extra)));
+    await assertSucceeds(setDoc(doc(db, `${H}/petRoutineLogs/rtn-r1-2031-01-06`), log(HELEN, { via: 'assistant' })));
+    const bad = (extra: Record<string, unknown>) => assertFails(setDoc(doc(db, `${H}/petRoutineLogs/rtn-r1-2031-01-06`), log(HELEN, extra)));
     await bad({ routineId: '' });
     await bad({ due: 'Monday' });
     await bad({ on: undefined });
@@ -175,6 +176,24 @@ describe('petRoutineLogs', () => {
     await bad({ note: 'x'.repeat(201) });
     await bad({ via: 'portal' });
     await bad({ color: 'brown' });
+  });
+});
+
+describe('petRoutineLogs ids and routines', () => {
+  it('the id must be the routine and due day, so every writer lands on the same document', async () => {
+    const db = as(HELEN);
+    await assertFails(setDoc(doc(db, `${H}/petRoutineLogs/anything`), log(HELEN)));
+    await assertFails(setDoc(doc(db, `${H}/petRoutineLogs/rtn-r1-2031-01-07`), log(HELEN)));
+    await assertSucceeds(setDoc(doc(db, `${H}/petRoutineLogs/rtn-r1-2031-01-07`), log(HELEN, { due: '2031-01-07' })));
+  });
+
+  it('only for a routine that exists, and in the same batch as the routine it restores', async () => {
+    await assertFails(setDoc(doc(as(HELEN), `${H}/petRoutineLogs/rtn-r9-2031-01-06`), log(HELEN, { routineId: 'r9' })));
+    const bob = as(BOB);
+    const batch = writeBatch(bob);
+    batch.set(doc(bob, `${H}/petRoutines/r2`), routine(BOB));
+    batch.set(doc(bob, `${H}/petRoutineLogs/rtn-r2-2031-01-06`), log(BOB, { routineId: 'r2' }));
+    await assertSucceeds(batch.commit());
   });
 });
 

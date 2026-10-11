@@ -1139,6 +1139,8 @@ service cloud.firestore {
           && viaOk(request.resource.data)
           && petStr(request.resource.data, 'routineId', 1, 128)
           && petYmd(request.resource.data, 'due')
+          && logId == 'rtn-' + request.resource.data.routineId + '-' + request.resource.data.due
+          && existsAfter(/databases/$(database)/documents/households/$(householdId)/petRoutines/$(request.resource.data.routineId))
           && petYmd(request.resource.data, 'on')
           && request.resource.data.at is int
           && petOptStr(request.resource.data, 'note', 200)
