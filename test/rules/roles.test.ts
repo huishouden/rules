@@ -983,7 +983,7 @@ describe('babyContractionSettings: the provider’s instructions for the timer',
     it(`${who}: ${reads ? 'reads' : 'can’t read'} it and ${staff ? 'writes' : 'can’t write'} it`, async () => {
       await seed(path, note);
       await expect(reads, getDoc(doc(as(me), path)));
-      await expect(staff, setDoc(doc(as(me), path), { ...note, note: 'Call if 4 in an hour' }));
+      await expect(staff, setDoc(doc(as(me), path), { ...note, note: 'Call if 4 in an hour', updatedBy: me }));
     });
   }
   it('keeps to its fields, a string of at most 300 characters, and the id main', async () => {
@@ -992,6 +992,10 @@ describe('babyContractionSettings: the provider’s instructions for the timer',
     await assertFails(setDoc(doc(as(ALICE), path), { ...note, note: 5 }));
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/babyContractionSettings/other'), note));
     await assertSucceeds(setDoc(doc(as(ALICE), path), { ...note, note: 'x'.repeat(300) }));
+  });
+  it('is signed by the member who saves it', async () => {
+    await assertFails(setDoc(doc(as(ALICE), path), { ...note, updatedBy: BOB }));
+    await assertFails(setDoc(doc(as(ALICE), path), { note: 'x', updatedAt: 1 }));
   });
 });
 
@@ -1137,7 +1141,7 @@ describe('babyKickSettings: the target and the daily reminder time', () => {
     it(`${who}: ${reads ? 'reads' : 'can’t read'} it and ${staff ? 'writes' : 'can’t write'} it`, async () => {
       await seed(path, settings);
       await expect(reads, getDoc(doc(as(me), path)));
-      await expect(staff, setDoc(doc(as(me), path), { ...settings, target: 8 }));
+      await expect(staff, setDoc(doc(as(me), path), { ...settings, target: 8, updatedBy: me }));
     });
   }
   it('keeps to its fields, a target of 1 to 50, an HH:MM time, and the id main', async () => {
@@ -1147,5 +1151,9 @@ describe('babyKickSettings: the target and the daily reminder time', () => {
     await assertFails(setDoc(doc(as(ALICE), path), { ...settings, remindAt: 5 }));
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/babyKickSettings/other'), settings));
     await assertSucceeds(setDoc(doc(as(ALICE), path), { target: 12, updatedAt: 1, updatedBy: ALICE }));
+  });
+  it('is signed by the member who saves it', async () => {
+    await assertFails(setDoc(doc(as(ALICE), path), { ...settings, updatedBy: BOB }));
+    await assertFails(setDoc(doc(as(ALICE), path), { target: 12, updatedAt: 1 }));
   });
 });

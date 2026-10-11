@@ -413,7 +413,8 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(['note', 'updatedAt', 'updatedBy'])
           && request.resource.data.note is string
           && request.resource.data.note.size() <= 300
-          && request.resource.data.updatedAt is int;
+          && request.resource.data.updatedAt is int
+          && request.resource.data.updatedBy == myEmail();
       }
 
       // Anyone may end a sleep someone else started (the babysitter records the wake-up).
@@ -462,7 +463,8 @@ service cloud.firestore {
           && request.resource.data.target >= 1 && request.resource.data.target <= 50
           && (!('remindAt' in request.resource.data) || (request.resource.data.remindAt is string
             && request.resource.data.remindAt.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')))
-          && request.resource.data.updatedAt is int;
+          && request.resource.data.updatedAt is int
+          && request.resource.data.updatedBy == myEmail();
       }
 
       // Kick counter: one record per counting session (its start, end, the time of each movement
