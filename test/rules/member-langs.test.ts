@@ -27,6 +27,7 @@ beforeEach(async () => {
       name: 'Home',
       members: [ADMIN, MEMBER, HELPER, KID],
       roles: { [ADMIN]: 'admin', [MEMBER]: 'member', [HELPER]: 'helper', [KID]: 'kid' },
+      joined: [ADMIN, MEMBER, HELPER, KID],
       langs: { [ADMIN]: 'en' },
       createdAt: 1,
     });
@@ -43,6 +44,14 @@ describe("a member's language", () => {
       await assertSucceeds(mine(email, 'es'));
     }
     await assertSucceeds(getDoc(doc(as(KID), H)));
+  });
+
+  it('refuses a member invited but not yet joined', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), H), { joined: [ADMIN, MEMBER, KID] });
+    });
+    await assertFails(mine(HELPER, 'nl'));
+    await assertSucceeds(mine(MEMBER, 'nl'));
   });
 
   it('refuses a language the suite does not speak, or not a string', async () => {

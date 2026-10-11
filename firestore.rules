@@ -176,10 +176,12 @@ service cloud.firestore {
 
       // Each member's language for the whole suite (@huishouden/pwa-kit/member-lang): a map from
       // lowercase email to en, es or nl, which every member reads with the household (apps publish in
-      // their readers' languages, the sender notifies in it). A member writes only their own entry.
+      // their readers' languages, the sender notifies in it). A member writes only their own entry,
+      // and only once they have joined: an invitation never acted on learns nothing of them.
       function myLangOnly() {
         let after = request.resource.data.get('langs', null);
-        return after is map
+        return myEmail() in resource.data.get('joined', [])
+          && after is map
           && after.diff(resource.data.get('langs', {})).affectedKeys().hasOnly([myEmail()])
           && after.get(myEmail(), '') in ['en', 'es', 'nl'];
       }
