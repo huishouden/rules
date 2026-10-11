@@ -394,6 +394,18 @@ service cloud.firestore {
           && request.resource.data.text.size() <= 200;
       }
 
+      // Contraction timer: one record per contraction, shared live. Admins, members and helpers
+      // (a doula, a relative) read and time them; kids see and write none. A helper can stop a
+      // contraction someone else started (only `end`), and removes only their own.
+      match /babyContractions/{contractionId} {
+        allow read: if isMember() && role() != 'kid';
+        allow delete: if canRemove() && role() != 'kid';
+        allow create, update: if writer(['end', 'updatedAt']) && role() != 'kid'
+          && request.resource.data.keys().hasOnly(['start', 'end', 'by', 'createdAt', 'updatedAt'])
+          && request.resource.data.start is int
+          && (!('end' in request.resource.data) || (request.resource.data.end is int && request.resource.data.end >= request.resource.data.start));
+      }
+
       match /babyAppointments/{appointmentId} {
         allow read: if readable();
         allow delete: if canRemove() && (staff() || openBefore());
