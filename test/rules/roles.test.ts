@@ -634,6 +634,19 @@ describe('reminders with a source', () => {
     await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/t6'), reminder(HELEN, { source: { checks: [{ doc: 5 }] } })));
   });
 
+  it("Baby appointments and Car renewals and service items: each app's own records only", async () => {
+    const named = (app: string, docPath: string) => reminder(HELEN, { app, source: { checks: [{ doc: docPath, due: [{ field: 'dueDate', in: ['2031-03-01'] }] }] } });
+    // Baby appointments can be private: only staff may name them in a source (a helper's reminder carries none).
+    await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/reminders/b0'), { ...named('baby', 'babyAppointments/a1'), by: BOB }));
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/b1'), named('baby', 'babyAppointments/a1')));
+    await assertSucceeds(setDoc(doc(as(HELEN), 'households/h1/reminders/c1'), named('car', 'carRenewals/r1')));
+    await assertSucceeds(setDoc(doc(as(HELEN), 'households/h1/reminders/c2'), named('car', 'carServiceItems/s1')));
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/c3'), named('car', 'babyAppointments/a1')));
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/c4'), named('baby', 'carRenewals/r1')));
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/c5'), named('car', 'carVehicles/v1')));
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/c6'), named('baby', 'babyProfile/main')));
+  });
+
   it('personal reminders too: signed by the writer (kids write none)', async () => {
     const personal = (by: string) => ({ ...reminder(by), recipients: [by], private: true, audience: [by] });
     await assertSucceeds(setDoc(doc(as(HELEN), 'households/h1/personalReminders/p1'), personal(HELEN)));
