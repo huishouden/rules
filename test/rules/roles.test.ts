@@ -994,3 +994,71 @@ describe('babyContractionSettings: the provider’s instructions for the timer',
     await assertSucceeds(setDoc(doc(as(ALICE), path), { ...note, note: 'x'.repeat(300) }));
   });
 });
+
+describe('babyKickSessions: the kick counter', () => {
+  const col = 'households/h1/babyKickSessions';
+  const one = (by: string, more: object = {}) => ({ start: 1700000000000, taps: [1700000060000], target: 10, by, createdAt: 1, ...more });
+  const WRITERS: Who[] = ['admin', 'member', 'helper'];
+
+  for (const who of EVERYONE) {
+    const me = PERSON[who];
+    const writes = WRITERS.includes(who);
+    it(`${who}: ${writes ? 'reads and counts' : 'can’t read or count'} kicks`, async () => {
+      await seed(`${col}/theirs`, one(ALICE));
+      await expect(writes, getDoc(doc(as(me), `${col}/theirs`)));
+      await expect(writes, getDocs(collection(as(me), col)));
+      const mine = doc(as(me), `${col}/mine-${who}`);
+      await expect(writes, setDoc(mine, one(me)));
+      if (!writes) return;
+      await assertSucceeds(updateDoc(mine, { taps: [1700000060000, 1700000120000], end: 1700000180000, updatedAt: 2 }));
+      await assertSucceeds(deleteDoc(mine));
+    });
+  }
+
+  it('a helper taps and ends a session someone else started, and nothing else of it; can’t delete it', async () => {
+    await seed(`${col}/theirs`, one(ALICE));
+    const db = as(HELEN);
+    await assertFails(updateDoc(doc(db, `${col}/theirs`), { start: 5 }));
+    await assertFails(updateDoc(doc(db, `${col}/theirs`), { note: 'hello' }));
+    await assertFails(updateDoc(doc(db, `${col}/theirs`), { target: 5 }));
+    await assertFails(deleteDoc(doc(db, `${col}/theirs`)));
+    await assertSucceeds(updateDoc(doc(db, `${col}/theirs`), { taps: [1700000060000, 1700000120000], updatedAt: 2 }));
+    await assertSucceeds(updateDoc(doc(db, `${col}/theirs`), { end: 1700000180000, updatedAt: 3 }));
+  });
+
+  it('refuses a forged author, an end before the start, unknown fields, a bad target and too many taps', async () => {
+    await assertFails(setDoc(doc(as(HELEN), `${col}/a`), one(ALICE)));
+    await assertFails(setDoc(doc(as(BOB), `${col}/b`), one(BOB, { end: 5 })));
+    await assertFails(setDoc(doc(as(BOB), `${col}/c`), one(BOB, { extra: 'x' })));
+    await assertFails(setDoc(doc(as(BOB), `${col}/d`), one(BOB, { start: '1' })));
+    await assertFails(setDoc(doc(as(BOB), `${col}/e`), one(BOB, { target: 0 })));
+    await assertFails(setDoc(doc(as(BOB), `${col}/f`), one(BOB, { target: 51 })));
+    await assertFails(setDoc(doc(as(BOB), `${col}/g`), one(BOB, { taps: 'x' })));
+    await assertFails(setDoc(doc(as(BOB), `${col}/h`), one(BOB, { taps: Array.from({ length: 61 }, (_, i) => i) })));
+    await assertFails(setDoc(doc(as(BOB), `${col}/i`), one(BOB, { note: 'x'.repeat(301) })));
+    await assertSucceeds(setDoc(doc(as(BOB), `${col}/j`), one(BOB, { end: 1700000180000, note: 'after lunch', taps: Array.from({ length: 60 }, (_, i) => i) })));
+  });
+});
+
+describe('babyKickSettings: the target and the daily reminder time', () => {
+  const path = 'households/h1/babyKickSettings/main';
+  const settings = { target: 10, remindAt: '19:30', updatedAt: 1, updatedBy: ALICE };
+  for (const who of EVERYONE) {
+    const me = PERSON[who];
+    const staff = STAFF.includes(who);
+    const reads = who === 'helper' || staff;
+    it(`${who}: ${reads ? 'reads' : 'can’t read'} it and ${staff ? 'writes' : 'can’t write'} it`, async () => {
+      await seed(path, settings);
+      await expect(reads, getDoc(doc(as(me), path)));
+      await expect(staff, setDoc(doc(as(me), path), { ...settings, target: 8 }));
+    });
+  }
+  it('keeps to its fields, a target of 1 to 50, an HH:MM time, and the id main', async () => {
+    await assertFails(setDoc(doc(as(ALICE), path), { ...settings, extra: 1 }));
+    await assertFails(setDoc(doc(as(ALICE), path), { ...settings, target: 0 }));
+    await assertFails(setDoc(doc(as(ALICE), path), { ...settings, remindAt: '25:00' }));
+    await assertFails(setDoc(doc(as(ALICE), path), { ...settings, remindAt: 5 }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/babyKickSettings/other'), settings));
+    await assertSucceeds(setDoc(doc(as(ALICE), path), { target: 12, updatedAt: 1, updatedBy: ALICE }));
+  });
+});

@@ -426,6 +426,40 @@ service cloud.firestore {
           && (!('end' in request.resource.data) || (request.resource.data.end is int && request.resource.data.end >= request.resource.data.start));
       }
 
+      // The kick counter's household settings (the target and the daily reminder time): admins and
+      // members write, helpers read, kids none.
+      match /babyKickSettings/{docId} {
+        allow read: if isMember() && role() != 'kid';
+        allow write: if staff()
+          && docId == 'main'
+          && request.resource.data.keys().hasOnly(['target', 'remindAt', 'updatedAt', 'updatedBy'])
+          && request.resource.data.target is int
+          && request.resource.data.target >= 1 && request.resource.data.target <= 50
+          && (!('remindAt' in request.resource.data) || (request.resource.data.remindAt is string
+            && request.resource.data.remindAt.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')))
+          && request.resource.data.updatedAt is int;
+      }
+
+      // Kick counter: one record per counting session (its start, end, the time of each movement
+      // and an optional note), shared live. Admins, members and helpers read and write them; kids
+      // see and write none. A helper can tap or stop a session someone else started (`taps`, `end`),
+      // and removes only their own. A day's first session has the day (YYYY-MM-DD) as its id, which
+      // is what the daily reminder's source names (the kit's REMINDER_SOURCES).
+      match /babyKickSessions/{sessionId} {
+        allow read: if isMember() && role() != 'kid';
+        allow delete: if canRemove() && role() != 'kid';
+        allow create, update: if writer(['taps', 'end', 'updatedAt']) && role() != 'kid'
+          && request.resource.data.keys().hasOnly(['start', 'end', 'taps', 'target', 'note', 'by', 'createdAt', 'updatedAt'])
+          && request.resource.data.start is int
+          && request.resource.data.taps is list
+          && request.resource.data.taps.size() <= 60
+          && request.resource.data.target is int
+          && request.resource.data.target >= 1 && request.resource.data.target <= 50
+          && request.resource.data.createdAt is int
+          && (!('end' in request.resource.data) || (request.resource.data.end is int && request.resource.data.end >= request.resource.data.start))
+          && (!('note' in request.resource.data) || (request.resource.data.note is string && request.resource.data.note.size() <= 300));
+      }
+
       match /babyAppointments/{appointmentId} {
         allow read: if readable();
         allow delete: if canRemove() && (staff() || openBefore());
@@ -1377,7 +1411,7 @@ service cloud.firestore {
           'pet': '(petProfiles|petMedCourses|petMedDoses|petMeals|petOutingPlans|petOutings|petRoutines|petRoutineLogs)/' + id,
           'health': 'healthPeople/' + id + '/(doses|meds)/' + id,
           'home': '(homeEvents|homeEventPrep)/' + id,
-          'baby': 'babyAppointments/' + id,
+          'baby': '(babyAppointments|babyKickSessions)/' + id,
           'car': '(carRenewals|carServiceItems)/' + id
         };
         return c is map && c.get('doc', '') is string && c.doc.size() > 0 && c.doc.matches(docs.get(app, ''))
