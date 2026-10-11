@@ -972,3 +972,25 @@ describe('babyContractions: the contraction timer', () => {
     await assertSucceeds(setDoc(doc(as(BOB), `${col}/e`), { ...one(BOB), end: 1700000060000 }));
   });
 });
+
+describe('babyContractionSettings: the provider’s instructions for the timer', () => {
+  const path = 'households/h1/babyContractionSettings/main';
+  const note = { note: 'Call if 6 in an hour', updatedAt: 1, updatedBy: ALICE };
+  for (const who of EVERYONE) {
+    const me = PERSON[who];
+    const staff = STAFF.includes(who);
+    const reads = who === 'helper' || staff;
+    it(`${who}: ${reads ? 'reads' : 'can’t read'} it and ${staff ? 'writes' : 'can’t write'} it`, async () => {
+      await seed(path, note);
+      await expect(reads, getDoc(doc(as(me), path)));
+      await expect(staff, setDoc(doc(as(me), path), { ...note, note: 'Call if 4 in an hour' }));
+    });
+  }
+  it('keeps to its fields, a string of at most 300 characters, and the id main', async () => {
+    await assertFails(setDoc(doc(as(ALICE), path), { ...note, extra: 1 }));
+    await assertFails(setDoc(doc(as(ALICE), path), { ...note, note: 'x'.repeat(301) }));
+    await assertFails(setDoc(doc(as(ALICE), path), { ...note, note: 5 }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/babyContractionSettings/other'), note));
+    await assertSucceeds(setDoc(doc(as(ALICE), path), { ...note, note: 'x'.repeat(300) }));
+  });
+});
