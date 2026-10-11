@@ -380,9 +380,9 @@ describe('for named people only: personal agenda, to-dos and reminders', () => {
       { doc: `healthPeople/nan/meds/${m}`, due: [{ field: 'remind', in: [true] }, { field: 'endDate', notIn: stopped }], group },
     ]);
     const texts = {
-      en: { title: 'Medicine for Nan', body: 'At 8 AM: Lisinopril 10 mg, 1 tablet; Metformin 500 mg, 1 tablet, with food; Atorvastatin 20 mg, 1 tablet; Vitamin D3 25 mcg, 1 capsule' },
-      es: { title: 'Medicina para Nan', body: 'A las 8 a.m.: Lisinopril 10 mg, 1 comprimido; Metformina 500 mg, 1 comprimido, con comida; Atorvastatina 20 mg, 1 comprimido; Vitamina D3 25 mcg, 1 cápsula' },
-      nl: { title: 'Medicijn voor Nan', body: 'Om 08:00: Lisinopril 10 mg, 1 tablet; Metformine 500 mg, 1 tablet, bij het eten; Atorvastatine 20 mg, 1 tablet; Vitamine D3 25 mcg, 1 capsule' },
+      en: { title: 'Medicine for Nan', body: 'At 8 AM: Example medicine A 10 mg, 1 tablet; Example medicine B 500 mg, 1 tablet, with food; Example medicine C 20 mg, 1 tablet; Example medicine D 25 mcg, 1 capsule' },
+      es: { title: 'Medicina para Nan', body: 'A las 8 a.m.: Medicina de ejemplo A 10 mg, 1 comprimido; Medicina de ejemplo B 500 mg, 1 comprimido, con comida; Medicina de ejemplo C 20 mg, 1 comprimido; Medicina de ejemplo D 25 mcg, 1 cápsula' },
+      nl: { title: 'Medicijn voor Nan', body: 'Om 08:00: Voorbeeldmedicijn A 10 mg, 1 tablet; Voorbeeldmedicijn B 500 mg, 1 tablet, bij het eten; Voorbeeldmedicijn C 20 mg, 1 tablet; Voorbeeldmedicijn D 25 mcg, 1 capsule' },
     };
     const source = { checks, any: true };
     // Alice is an admin who isn't one of Nan's readers (the costliest path), Bob a member and Helen a helper among them.
@@ -392,7 +392,13 @@ describe('for named people only: personal agenda, to-dos and reminders', () => {
       await assertSucceeds(setDoc(ref, reminder(who, AUD, { source, texts, body: '8:00 AM: Lisinopril 10 mg; Metformin 500 mg' })));
     }
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g4'), reminder(BOB, AUD, { source: { checks: [...checks, checks[0]], any: true } })));
-    // Every check is a Health record: not another collection, not a check without a document.
+    // Every check is one of Nan's records: not another person's (Bob doesn't look after Pip; nor may an
+    // admin mix people), not another collection, not a check without a document.
+    await seed('households/h1/healthPeople/pip', person({ name: 'Pip', carers: [HELEN], readers: [HELEN] }));
+    const pips = { doc: 'healthPeople/pip/doses/m9_2031-01-15T0800', absent: true, group: 0 };
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g9'), reminder(BOB, AUD, { source: { checks: [checks[0], pips], any: true } })));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/personalReminders/g10'), reminder(ALICE, AUD, { source: { checks: [checks[0], pips], any: true } })));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g11'), reminder(BOB, AUD, { source: { checks: [{ doc: 'healthPeople/n.n/doses/d1', absent: true }] } })));
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g5'), reminder(BOB, AUD, { source: { checks: [checks[0], { doc: 'healthPeople/nan/notes/n1', absent: true }] } })));
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g6'), reminder(BOB, AUD, { source: { checks: [checks[0], { absent: true }] } })));
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g7'), reminder(BOB, AUD, { source: { checks: [checks[0], 'healthPeople/nan/doses/d1'] } })));

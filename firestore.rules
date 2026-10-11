@@ -1436,8 +1436,8 @@ service cloud.firestore {
       // Kept cheap: a request may evaluate at most 1000 expressions, a personal reminder with its
       // texts in three languages spends most of them, and a Health dose reminder's source has up to
       // eight checks (test/rules/health.test.ts writes the largest). So who may write a source is
-      // worked out once, and each check is one match; arguments are evaluated where they are used,
-      // so what a check uses is a literal.
+      // worked out once, and each check is one match. A function's arguments are evaluated each time
+      // they are used, so what a check uses is a literal or a `let` (evaluated once).
       //
       // Who may name the app's records: Baby's staff only (appointments can be private, which the
       // sender reads whatever the flag; the kit's REMINDER_SOURCES); Health's only on a personal
@@ -1450,24 +1450,26 @@ service cloud.firestore {
               || role() == 'admin')));
       }
 
-      // `personal`: a personalReminders document, which only its audience reads; a Health source is
-      // only ever on one, never on a shared reminder every member reads.
+      // `personal`: a personalReminders write, which only its audience reads (a Health source is only
+      // ever on one, never on a shared reminder every member reads), and whose rule (audienceWrite)
+      // has already checked `by == myEmail()` and refused kids: hhSourceWriter relies on both.
       function hhReminderSource(d, personal) {
         // (keys() refuses a source that isn't a map; a check that isn't a map with a string `doc` fails its match.)
         return !('source' in d) || (d.source.keys().hasOnly(['checks', 'any'])
           && d.source.get('any', false) is bool
-          // A personal reminder's writer is checked already (audienceWrite).
           && (personal || d.by == myEmail())
-          && d.source.get('checks', null) is list && d.source.checks.size() >= 1 && d.source.checks.size() <= 8
+          && d.source.get('checks', null) is list
           && hhSourceDoc(d.app, d.source.checks, d.get('private', false) == true)
           && hhSourceWriter(d.app, personal, d.source.checks[0].doc));
       }
 
-      // The app's documents, as a pattern each check's `doc` must match. Health's checks may name any
-      // person's records here: the writer must be a reader of the first check's person
-      // (hhSourceWriter), and the sender counts the source only when they read every check's.
+      // The app's documents, as a pattern each check's `doc` must match. Health's are all under the
+      // first check's person (whose readers hhSourceWriter checks; the sender checks every check's
+      // too). That id must be a Firestore id (letters, digits, - and _, as Health makes them), so it
+      // is safe inside the pattern.
       function hhSourceDoc(app, cs, isPrivate) {
-        return app == 'health' ? hhSourceList(cs, 'healthPeople/[^/]{1,200}/(doses|meds)/[^/]{1,200}')
+        let health = 'healthPeople/' + cs[0].doc.split('/')[1] + '/(doses|meds)/[^/]{1,200}';
+        return app == 'health' ? cs[0].doc.matches('healthPeople/[A-Za-z0-9_-]{1,200}/(doses|meds)/[^/]{1,200}') && hhSourceList(cs, health)
           : app == 'tasks' ? hhSourceList(cs, 'items/[^/]{1,200}')
           : app == 'bills' ? hhSourceList(cs, 'bills/[^/]{1,200}')
           : app == 'pet' ? hhSourceList(cs, '(petProfiles|petMedCourses|petMedDoses|petMeals|petOutingPlans|petOutings|petRoutines|petRoutineLogs)/[^/]{1,200}')
@@ -1479,9 +1481,11 @@ service cloud.firestore {
           : false;
       }
 
-      // Each check's `doc` matches (a check that isn't a map, or has no string doc, is an error: refused).
+      // One to eight checks (the kit's REMINDER_SOURCE_LIMITS.checks; a ninth needs its own line here),
+      // each one's `doc` matching (a check that isn't a map, or has no string doc, is an error: refused).
       function hhSourceList(cs, pattern) {
-        return cs[0].doc.matches(pattern)
+        return cs.size() >= 1 && cs.size() <= 8
+          && cs[0].doc.matches(pattern)
           && (cs.size() < 2 || cs[1].doc.matches(pattern))
           && (cs.size() < 3 || cs[2].doc.matches(pattern))
           && (cs.size() < 4 || cs[3].doc.matches(pattern))
