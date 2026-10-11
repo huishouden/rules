@@ -465,7 +465,8 @@ service cloud.firestore {
             : ((addedByMe() && signsAsMe()) || kickTick()))))
           // Whoever writes, a session is signed by who started it and keeps its start: a second device's
           // Start on a day whose first session it hadn't seen (the id is the day) is refused, not an overwrite.
-          && (request.method == 'create' || (request.resource.data.by == resource.data.by
+          // Every session is signed; admins and members may sign as the starter when they put one back (Undo after deleting another's).
+          && (request.method == 'create' ? (request.resource.data.get('by', null) is string && request.resource.data.by.size() > 0 && request.resource.data.by.size() <= 120) : (request.resource.data.get('by', null) == resource.data.get('by', null)
             && request.resource.data.start == resource.data.start
             && request.resource.data.createdAt == resource.data.createdAt))
           && request.resource.data.keys().hasOnly(['start', 'end', 'taps', 'target', 'note', 'by', 'createdAt', 'updatedAt'])
