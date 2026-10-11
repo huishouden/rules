@@ -389,7 +389,7 @@ describe('for named people only: personal agenda, to-dos and reminders', () => {
     for (const [who, id] of [[ALICE, 'g1'], [BOB, 'g2'], [HELEN, 'g3']] as const) {
       const ref = doc(as(who), `households/h1/personalReminders/${id}`);
       await assertSucceeds(setDoc(ref, reminder(who, AUD, { source, texts })));
-      await assertSucceeds(setDoc(ref, reminder(who, AUD, { source, texts, body: '8:00 AM: Lisinopril 10 mg; Metformin 500 mg' })));
+      await assertSucceeds(setDoc(ref, reminder(who, AUD, { source, texts, body: '8:00 AM: Example medicine A 10 mg; Example medicine B 500 mg' })));
     }
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g4'), reminder(BOB, AUD, { source: { checks: [...checks, checks[0]], any: true } })));
     // Every check is one of Nan's records: not another person's (Bob doesn't look after Pip; nor may an
@@ -398,7 +398,11 @@ describe('for named people only: personal agenda, to-dos and reminders', () => {
     const pips = { doc: 'healthPeople/pip/doses/m9_2031-01-15T0800', absent: true, group: 0 };
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g9'), reminder(BOB, AUD, { source: { checks: [checks[0], pips], any: true } })));
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/personalReminders/g10'), reminder(ALICE, AUD, { source: { checks: [checks[0], pips], any: true } })));
+    // A person id that isn't a Firestore id (here with a regex wildcard) is refused even when Bob reads
+    // that person: it would otherwise widen the pattern to Nan's records and others'.
+    await seed('households/h1/healthPeople/n.n', person({ name: 'Dot', carers: [BOB], readers: [BOB] }));
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g11'), reminder(BOB, AUD, { source: { checks: [{ doc: 'healthPeople/n.n/doses/d1', absent: true }] } })));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g12'), reminder(BOB, AUD, { source: { checks: [{ doc: 'healthPeople/n.n/doses/d1', absent: true }, { doc: 'healthPeople/nan/doses/d1', absent: true }], any: true } })));
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g5'), reminder(BOB, AUD, { source: { checks: [checks[0], { doc: 'healthPeople/nan/notes/n1', absent: true }] } })));
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g6'), reminder(BOB, AUD, { source: { checks: [checks[0], { absent: true }] } })));
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g7'), reminder(BOB, AUD, { source: { checks: [checks[0], 'healthPeople/nan/doses/d1'] } })));
