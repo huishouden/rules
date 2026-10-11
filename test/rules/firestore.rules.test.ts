@@ -259,11 +259,15 @@ describe('household contents', () => {
       await fails('carServiceItems/s2', { ...oil, everyMonths: 0 });
       await fails('carServiceItems/s2', { ...oil, everyDistance: 2.5 });
       await fails('carServiceItems/s2', { ...oil, lastDate: '10/01/2031' });
+      await fails('carServiceItems/s2', { ...oil, remind: 'yes' });
+      await assertSucceeds(setDoc(doc(db, 'households/h1/carServiceItems/s2'), { ...oil, remind: false }));
       await fails('carOdometer/o3', { ...reading, reading: -1 });
       await fails('carOdometer/o3', { ...reading, reading: 42180.5 });
       await fails('carOdometer/o3', { ...reading, plate: 'x' });
       await fails('carRenewals/r3', { ...registration, kind: 'parking' });
       await fails('carRenewals/r3', { ...registration, dueDate: 'soon' });
+      await fails('carRenewals/r3', { ...registration, remind: 1 });
+      await assertSucceeds(setDoc(doc(db, 'households/h1/carRenewals/r3'), { ...registration, remind: false }));
       await fails('carServiceLog/l2', { ...visit, costCents: 89.99 });
       await fails('carServiceLog/l2', { ...visit, what: '' });
       await fails('carServiceLog/l2', { ...visit, notes: 'x'.repeat(1001) });
