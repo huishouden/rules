@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
@@ -48,7 +49,8 @@ describe('households', () => {
   });
 
   describe('a first household has one id per person', () => {
-    const FIRST = `households/first-${MALLORY}`;
+    const firstId = (email: string) => `first-${createHash('sha256').update(email).digest('hex')}`;
+    const FIRST = `households/${firstId(MALLORY)}`;
     const mine = (name = 'Mine', createdAt = Date.now()) => ({ name, members: [MALLORY], roles: { [MALLORY]: 'admin' }, createdAt });
 
     it('lets the person create it once', async () => {
@@ -70,7 +72,8 @@ describe('households', () => {
     });
 
     it('refuses a first- id spelled with another case or address', async () => {
-      await assertFails(setDoc(doc(as(MALLORY), 'households/first-someone@example.com'), mine()));
+      await assertFails(setDoc(doc(as(MALLORY), `households/${firstId(BOB)}`), mine()));
+      await assertFails(setDoc(doc(as(MALLORY), `households/first-${MALLORY}`), mine()));
       await assertFails(setDoc(doc(as(MALLORY), 'households/first-'), mine()));
     });
 
