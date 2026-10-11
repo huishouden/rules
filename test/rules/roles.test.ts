@@ -935,3 +935,40 @@ describe('cancelling from the To-do list', () => {
     await assertFails(setDoc(doc(as(BOB), 'households/h1/petMedDoses/c1_2031-05-04_0'), { ...dose(BOB), skipped: 1 }));
   });
 });
+
+describe('babyContractions: the contraction timer', () => {
+  const col = 'households/h1/babyContractions';
+  const one = (by: string) => ({ start: 1700000000000, by, createdAt: 1 });
+  const WRITERS: Who[] = ['admin', 'member', 'helper'];
+
+  for (const who of EVERYONE) {
+    const me = PERSON[who];
+    const writes = WRITERS.includes(who);
+    it(`${who}: ${writes ? 'reads and times' : 'can’t read or time'} contractions`, async () => {
+      await seed(`${col}/theirs`, one(ALICE));
+      await expect(writes, getDoc(doc(as(me), `${col}/theirs`)));
+      await expect(writes, getDocs(collection(as(me), col)));
+      const mine = doc(as(me), `${col}/mine-${who}`);
+      await expect(writes, setDoc(mine, one(me)));
+      if (!writes) return;
+      await assertSucceeds(updateDoc(mine, { end: 1700000060000, updatedAt: 2 }));
+      await assertSucceeds(deleteDoc(mine));
+    });
+  }
+
+  it('a helper stops a contraction someone else started, and nothing else of it; can’t delete it', async () => {
+    await seed(`${col}/theirs`, one(ALICE));
+    const db = as(HELEN);
+    await assertFails(updateDoc(doc(db, `${col}/theirs`), { start: 5 }));
+    await assertFails(deleteDoc(doc(db, `${col}/theirs`)));
+    await assertSucceeds(updateDoc(doc(db, `${col}/theirs`), { end: 1700000060000, updatedAt: 2 }));
+  });
+
+  it('refuses a forged author, an end before the start, unknown fields and a non-integer start', async () => {
+    await assertFails(setDoc(doc(as(HELEN), `${col}/a`), one(ALICE)));
+    await assertFails(setDoc(doc(as(BOB), `${col}/b`), { ...one(BOB), end: 5 }));
+    await assertFails(setDoc(doc(as(BOB), `${col}/c`), { ...one(BOB), note: 'x' }));
+    await assertFails(setDoc(doc(as(BOB), `${col}/d`), { ...one(BOB), start: '1' }));
+    await assertSucceeds(setDoc(doc(as(BOB), `${col}/e`), { ...one(BOB), end: 1700000060000 }));
+  });
+});
