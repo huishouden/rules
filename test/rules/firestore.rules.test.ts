@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
@@ -49,7 +48,8 @@ describe('households', () => {
   });
 
   describe('a first household has one id per person', () => {
-    const firstId = (email: string) => `first-${createHash('sha256').update(email).digest('hex')}`;
+    // as() signs in with the part of the address before the @ as the uid.
+    const firstId = (email: string) => `first-${email.split('@')[0]}`;
     const FIRST = `households/${firstId(MALLORY)}`;
     const mine = (name = 'Mine', createdAt = Date.now()) => ({ name, members: [MALLORY], roles: { [MALLORY]: 'admin' }, createdAt });
 
@@ -74,6 +74,21 @@ describe('households', () => {
     it('refuses a first- id spelled with another case or address', async () => {
       await assertFails(setDoc(doc(as(MALLORY), `households/${firstId(BOB)}`), mine()));
       await assertFails(setDoc(doc(as(MALLORY), `households/first-${MALLORY}`), mine()));
+    });
+
+    it('refuses an admin\'s repeat write over a household that has since grown, so no invited member is dropped', async () => {
+      await assertSucceeds(setDoc(doc(as(MALLORY), FIRST), mine('Mine', Date.now() - 1000)));
+      await assertSucceeds(updateDoc(doc(as(MALLORY), FIRST), { members: [MALLORY, BOB], roles: { [MALLORY]: 'admin', [BOB]: 'member' } }));
+      await assertFails(setDoc(doc(as(MALLORY), FIRST), mine('Mine', Date.now())));
+      await assertSucceeds(getDoc(doc(as(BOB), FIRST)));
+    });
+
+    it('refuses a removed creator writing the id again (the kit then uses a random id)', async () => {
+      await assertSucceeds(setDoc(doc(as(MALLORY), FIRST), mine('Mine', Date.now() - 1000)));
+      await assertSucceeds(updateDoc(doc(as(MALLORY), FIRST), { members: [MALLORY, BOB], roles: { [MALLORY]: 'admin', [BOB]: 'admin' } }));
+      await assertSucceeds(updateDoc(doc(as(BOB), FIRST), { members: [BOB], roles: { [BOB]: 'admin' } }));
+      await assertFails(setDoc(doc(as(MALLORY), FIRST), mine()));
+      await assertSucceeds(setDoc(doc(as(MALLORY), 'households/mine-again'), mine()));
       await assertFails(setDoc(doc(as(MALLORY), 'households/first-'), mine()));
     });
 
