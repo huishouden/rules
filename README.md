@@ -11,11 +11,17 @@ household's information visible only to its members.
 - `test/kit-fields.test.ts`: every `*_FIELDS` list `@huishouden/pwa-kit` exports matches the
   `hasOnly` list of the rule it writes through, field for field (a new list fails until it is mapped
   there or named as unchecked). Moving the kit pin (`hh dev bump-kit`) re-checks them.
+- `test/tool-coverage.test.ts`: every collection under a household that these rules let someone
+  write is listed in the kit's `COVERAGE` (`@huishouden/pwa-kit/household-tools/coverage`). Each is
+  covered by household tools, `internal` with the reason, or a `gap` with what is missing; the
+  test also fails on an entry for a collection the rules no longer have. pwa-kit STANDARD.md
+  "Household tools" says when a new collection needs its tool.
 
 ## Changing rules
 
 An app that adds or changes data opens a pull request here with the rules block and tests next to
-the others. CI runs the tests against the Firestore emulator; merging to `main` deploys the rules
+the others. User-editable data also needs its household tool (kit, connector, `hh data`) in the
+same change set, and a new collection needs its `COVERAGE` entry in the kit first. CI runs the tests against the Firestore emulator; merging to `main` deploys the rules
 and indexes (keyless, via the suite's deploy identity) only after the tests pass.
 
 Once the tests pass, every same-repo pull request also deploys its rules to the staging project
