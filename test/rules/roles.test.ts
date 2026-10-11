@@ -1040,6 +1040,23 @@ describe('babyKickSessions: the kick counter', () => {
   });
 });
 
+describe('a kick-count reminder’s source', () => {
+  const kicks = {
+    app: 'baby', title: 'Time for a kick count', body: '', at: 1700000000000, url: 'https://huishouden-piekstra.web.app/baby/#kicks', recipients: 'all',
+    ref: 'kicks:2031-05-14', private: true, sent: false, createdAt: 1700000000000,
+    source: { checks: [{ doc: 'babyKickSessions/2031-05-14', absent: true }] },
+  };
+  it('names a session for admins and members only: the sender reads it whatever the role', async () => {
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/reminders/k1'), { ...kicks, by: ALICE }));
+    await assertSucceeds(setDoc(doc(as(BOB), 'households/h1/reminders/k2'), { ...kicks, by: BOB }));
+    await assertFails(setDoc(doc(as(HELEN), 'households/h1/reminders/k3'), { ...kicks, by: HELEN, private: false }));
+    await assertFails(setDoc(doc(as(KIM), 'households/h1/reminders/k4'), { ...kicks, by: KIM, private: false }));
+  });
+  it('never another of Baby’s collections', async () => {
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/reminders/k5'), { ...kicks, by: ALICE, source: { checks: [{ doc: 'babyKickSettings/main', absent: true }] } }));
+  });
+});
+
 describe('babyKickSettings: the target and the daily reminder time', () => {
   const path = 'households/h1/babyKickSettings/main';
   const settings = { target: 10, remindAt: '19:30', updatedAt: 1, updatedBy: ALICE };
