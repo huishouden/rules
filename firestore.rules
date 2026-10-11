@@ -1083,6 +1083,68 @@ service cloud.firestore {
           && petAuthored(request.resource.data);
       }
 
+      // Care routines (scoop the litter box, change the litter, brush...): what to do, for one or
+      // several pets (two cats, one box), and how it repeats: every N days, weeks or months counted
+      // from when it was last done or fixed on the calendar, or on set weekdays. Setting them up is
+      // for admins and members. Anyone in the household marks one done in their own name
+      // (a sitter scoops the box): the log of a due day has the id `rtn-<routineId>-<due day>`, so
+      // the app, the portal's To-do list and the connector write the same one, and a routine's
+      // reminder is cancelled while that log is absent. Field lists match FIELDS in
+      // huishouden/pet src/lib/model.ts and pet-routines in the kit.
+      function petIdAt(l, i) {
+        return l.size() <= i || (l[i] is string && l[i].size() >= 1 && l[i].size() <= 128);
+      }
+      function petDayAt(l, i) {
+        return l.size() <= i || (l[i] is int && l[i] >= 0 && l[i] <= 6);
+      }
+      function routineSchedule(d) {
+        return d.mode == 'weekdays'
+          ? ('days' in d) && d.days is list && d.days.size() >= 1 && d.days.size() <= 7
+            && petDayAt(d.days, 0) && petDayAt(d.days, 1) && petDayAt(d.days, 2) && petDayAt(d.days, 3)
+            && petDayAt(d.days, 4) && petDayAt(d.days, 5) && petDayAt(d.days, 6)
+            && petOptRange(d, 'every', 1, 99)
+            && (!('unit' in d) || d.unit in ['day', 'week', 'month'])
+          : ('every' in d) && petOptRange(d, 'every', 1, 99)
+            && ('unit' in d) && d.unit in ['day', 'week', 'month']
+            && (!('days' in d) || (d.days is list && d.days.size() <= 7
+              && petDayAt(d.days, 0) && petDayAt(d.days, 1) && petDayAt(d.days, 2) && petDayAt(d.days, 3)
+              && petDayAt(d.days, 4) && petDayAt(d.days, 5) && petDayAt(d.days, 6)));
+      }
+
+      match /petRoutines/{routineId} {
+        allow read: if isMember();
+        allow delete: if staff();
+        allow create, update: if staff()
+          && request.resource.data.keys().hasOnly(['name', 'kind', 'petIds', 'mode', 'every', 'unit', 'days', 'since', 'remind', 'time', 'createdAt', 'updatedAt', 'by'])
+          && petStr(request.resource.data, 'name', 1, 60)
+          && (!('kind' in request.resource.data) || request.resource.data.kind in ['scoop', 'litter', 'brush', 'fountain', 'fishWater', 'cage', 'custom'])
+          && request.resource.data.petIds is list && request.resource.data.petIds.size() >= 1 && request.resource.data.petIds.size() <= 8
+          && petIdAt(request.resource.data.petIds, 0) && petIdAt(request.resource.data.petIds, 1)
+          && petIdAt(request.resource.data.petIds, 2) && petIdAt(request.resource.data.petIds, 3)
+          && petIdAt(request.resource.data.petIds, 4) && petIdAt(request.resource.data.petIds, 5)
+          && petIdAt(request.resource.data.petIds, 6) && petIdAt(request.resource.data.petIds, 7)
+          && request.resource.data.mode in ['after-done', 'fixed', 'weekdays']
+          && routineSchedule(request.resource.data)
+          && petYmd(request.resource.data, 'since')
+          && petOptBool(request.resource.data, 'remind')
+          && (!('time' in request.resource.data) || petHhmm(request.resource.data.time))
+          && petAuthored(request.resource.data);
+      }
+
+      match /petRoutineLogs/{logId} {
+        allow read: if isMember();
+        allow delete: if canRemove();
+        allow create, update: if writer([])
+          && request.resource.data.keys().hasOnly(['routineId', 'due', 'on', 'at', 'note', 'by', 'createdAt', 'updatedAt', 'via'])
+          && viaOk(request.resource.data)
+          && petStr(request.resource.data, 'routineId', 1, 128)
+          && petYmd(request.resource.data, 'due')
+          && petYmd(request.resource.data, 'on')
+          && request.resource.data.at is int
+          && petOptStr(request.resource.data, 'note', 200)
+          && petAuthored(request.resource.data);
+      }
+
       // One small avatar photo per pet, keyed by the pet's id, apart from the profile so lists stay
       // light: a WebP or JPEG data URL (@huishouden/pwa-kit/photo), at most 100 000 characters.
       match /petPhotos/{petId} {
@@ -1275,7 +1337,7 @@ service cloud.firestore {
         let docs = {
           'bills': 'bills/' + id,
           'tasks': 'items/' + id,
-          'pet': '(petProfiles|petMedCourses|petMedDoses|petMeals|petOutingPlans|petOutings)/' + id,
+          'pet': '(petProfiles|petMedCourses|petMedDoses|petMeals|petOutingPlans|petOutings|petRoutines|petRoutineLogs)/' + id,
           'health': 'healthPeople/' + id + '/(doses|meds)/' + id,
           'home': '(homeEvents|homeEventPrep)/' + id,
           'baby': 'babyAppointments/' + id,
