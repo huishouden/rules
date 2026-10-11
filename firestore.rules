@@ -401,7 +401,8 @@ service cloud.firestore {
         allow write: if staff()
           && docId == 'main'
           && request.resource.data.keys().hasOnly(['name', 'dueDate', 'birthDate', 'updatedAt', 'updatedBy'])
-          && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 60));
+          && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 60))
+          && (!('updatedBy' in request.resource.data) || request.resource.data.updatedBy == myEmail());
       }
 
       // The provider's instructions for the contraction timer ("call if 6 in an hour"): health,
@@ -646,7 +647,7 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(['distanceUnit', 'updatedAt', 'updatedBy'])
           && request.resource.data.distanceUnit in ['mi', 'km']
           && request.resource.data.updatedAt is int
-          && request.resource.data.updatedBy is string;
+          && request.resource.data.updatedBy == myEmail();
       }
 
       // Huishouden Home: the house's upkeep jobs with their schedules, the service history, and

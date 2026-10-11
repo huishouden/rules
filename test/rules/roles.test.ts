@@ -392,7 +392,7 @@ const SETUP: { path: string; doc: Record<string, unknown>; create?: boolean }[] 
   { path: 'stores/s1', doc: { name: 'Corner Grocer', categoryOrder: [] } },
   { path: 'carVehicles/v1', doc: { name: 'The car', createdAt: 1, by: ALICE } },
   { path: 'carSettings/main', doc: { distanceUnit: 'km', updatedAt: 1, updatedBy: ALICE } },
-  { path: 'babyProfile/main', doc: { name: 'Baby', updatedAt: 1 } },
+  { path: 'babyProfile/main', doc: { name: 'Baby', updatedAt: 1, updatedBy: ALICE } },
   {
     path: 'petMedCourses/k1',
     doc: { petId: 'p1', name: 'Antibiotic', dose: '1 tablet', timesPerDay: 1, times: ['09:00'], startDate: '2031-05-12', days: 7, withFood: true, createdAt: 1, by: ALICE },
@@ -403,6 +403,15 @@ const SETUP: { path: string; doc: Record<string, unknown>; create?: boolean }[] 
   { path: 'menus/m1', doc: { meals: [], createdAt: 1 }, create: true },
   { path: 'mealPlan/2031-01-06_dinner', doc: { day: '2031-01-06', type: 'dinner', name: 'Soup', meal: {}, by: '', updatedAt: 1 } },
 ];
+
+describe('settings signed by the member who saves them', () => {
+  it("an admin can't save the car's unit or the baby's profile as someone else", async () => {
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/carSettings/main'), { distanceUnit: 'km', updatedAt: 1, updatedBy: BOB }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/babyProfile/main'), { name: 'Baby', updatedAt: 1, updatedBy: BOB }));
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/carSettings/main'), { distanceUnit: 'km', updatedAt: 1, updatedBy: ALICE }));
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/babyProfile/main'), { name: 'Baby', updatedAt: 1, updatedBy: ALICE }));
+  });
+});
 
 describe('household setup, by role', () => {
   for (const s of SETUP) {
@@ -415,7 +424,11 @@ describe('household setup, by role', () => {
         const staff = STAFF.includes(who);
         const inside = IN_HOUSEHOLD.includes(who);
         // Food preferences and the meal plan record who wrote them.
-        const signed = { ...s.doc, ...('by' in s.doc && typeof s.doc.by === 'string' && s.path.match(/^(settings\/food|mealPlan)/) ? { by: me } : {}) };
+        const signed = {
+          ...s.doc,
+          ...('by' in s.doc && typeof s.doc.by === 'string' && s.path.match(/^(settings\/food|mealPlan)/) ? { by: me } : {}),
+          ...('updatedBy' in s.doc ? { updatedBy: me } : {}),
+        };
 
         it(`${who}: ${inside ? 'reads' : 'can’t read'}, ${staff ? 'writes' : 'can’t write'}`, async () => {
           await expect(inside, getDoc(doc(as(me), path)));
