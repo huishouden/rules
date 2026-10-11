@@ -371,6 +371,38 @@ describe('for named people only: personal agenda, to-dos and reminders', () => {
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/s6'), reminder(BOB, AUD, { source: { checks: [{ doc: 'healthPeople/nan' }] } })));
   });
 
+  it("personalReminders: Health's largest dose reminder (eight grouped checks, every language) is written and rewritten by any reader or an admin, and removed by any of them", async () => {
+    // Health's dose-time source (pwa-kit `group`): due while a dose is unmarked and its medicine still
+    // wants reminders. With its texts it sits near the rules' 1000-expression limit: this keeps it under.
+    const stopped = Array.from({ length: 8 }, (_, i) => `2031-01-${String(14 - i).padStart(2, '0')}`);
+    const checks = ['m1', 'm2', 'm3', 'm4'].flatMap((m, group) => [
+      { doc: `healthPeople/nan/doses/${m}_2031-01-15T0800`, absent: true, group },
+      { doc: `healthPeople/nan/meds/${m}`, due: [{ field: 'remind', in: [true] }, { field: 'endDate', notIn: stopped }], group },
+    ]);
+    const texts = {
+      en: { title: 'Medicine for Nan', body: 'At 8 AM: Lisinopril 10 mg, 1 tablet; Metformin 500 mg, 1 tablet, with food; Atorvastatin 20 mg, 1 tablet; Vitamin D3 25 mcg, 1 capsule' },
+      es: { title: 'Medicina para Nan', body: 'A las 8 a.m.: Lisinopril 10 mg, 1 comprimido; Metformina 500 mg, 1 comprimido, con comida; Atorvastatina 20 mg, 1 comprimido; Vitamina D3 25 mcg, 1 cápsula' },
+      nl: { title: 'Medicijn voor Nan', body: 'Om 08:00: Lisinopril 10 mg, 1 tablet; Metformine 500 mg, 1 tablet, bij het eten; Atorvastatine 20 mg, 1 tablet; Vitamine D3 25 mcg, 1 capsule' },
+    };
+    const source = { checks, any: true };
+    // Alice is an admin who isn't one of Nan's readers (the costliest path), Bob a member and Helen a helper among them.
+    for (const [who, id] of [[ALICE, 'g1'], [BOB, 'g2'], [HELEN, 'g3']] as const) {
+      const ref = doc(as(who), `households/h1/personalReminders/${id}`);
+      await assertSucceeds(setDoc(ref, reminder(who, AUD, { source, texts })));
+      await assertSucceeds(setDoc(ref, reminder(who, AUD, { source, texts, body: '8:00 AM: Lisinopril 10 mg; Metformin 500 mg' })));
+    }
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g4'), reminder(BOB, AUD, { source: { checks: [...checks, checks[0]], any: true } })));
+    // Every check is a Health record: not another collection, not a check without a document.
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g5'), reminder(BOB, AUD, { source: { checks: [checks[0], { doc: 'healthPeople/nan/notes/n1', absent: true }] } })));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g6'), reminder(BOB, AUD, { source: { checks: [checks[0], { absent: true }] } })));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g7'), reminder(BOB, AUD, { source: { checks: [checks[0], 'healthPeople/nan/doses/d1'] } })));
+    await assertFails(setDoc(doc(as(BOB), 'households/h1/personalReminders/g8'), reminder(BOB, AUD, { source: 'healthPeople/nan/doses/d1' })));
+    // Reminders turned off on one device: whichever reader's device syncs next removes it, whoever wrote it.
+    await assertSucceeds(deleteDoc(doc(as(BOB), 'households/h1/personalReminders/g1')));
+    await assertSucceeds(deleteDoc(doc(as(HELEN), 'households/h1/personalReminders/g2')));
+    await assertSucceeds(deleteDoc(doc(as(ALICE), 'households/h1/personalReminders/g3')));
+  });
+
   it('personalTodos: the id is the app and ref', async () => {
     await assertFails(setDoc(doc(as(BOB), 'households/h1/personalTodos/pet:x'), todo(BOB, AUD)));
   });
