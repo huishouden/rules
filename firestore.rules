@@ -148,7 +148,14 @@ service cloud.firestore {
       // Apps open the oldest household a person belongs to, so `createdAt` must be the real time
       // of creation (within an hour, for clock drift): a backdated household could otherwise
       // invite someone and take the place of their own in every app.
+      //
+      // A person's first household has the id `first-<sha-256 of their email, hex>` (the kit's
+      // createHousehold; opaque, so no log or link carries the address), so
+      // a second tap, a retry or a second tab writes the same document instead of making another:
+      // the repeat is an update that changes createdAt, which the update rule refuses. Only that
+      // person may create the id, or anyone could squat it and stop them starting a household.
       allow create: if signedIn()
+        && (!householdId.matches('first-.*') || householdId == 'first-' + hashing.sha256(myEmail()).toHexString().lower())
         && request.resource.data.keys().hasOnly(['name', 'members', 'createdAt', 'roles'])
         && request.resource.data.members == [myEmail()]
         && (!('roles' in request.resource.data) || (request.resource.data.roles is map

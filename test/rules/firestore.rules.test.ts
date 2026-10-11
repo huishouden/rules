@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
@@ -45,6 +46,40 @@ function as(email: string, verified = true) {
 describe('households', () => {
   it('lets members find their household with an array-contains query', async () => {
     await assertSucceeds(getDocs(query(collection(as(ALICE), 'households'), where('members', 'array-contains', ALICE))));
+  });
+
+  describe('a first household has one id per person', () => {
+    const firstId = (email: string) => `first-${createHash('sha256').update(email).digest('hex')}`;
+    const FIRST = `households/${firstId(MALLORY)}`;
+    const mine = (name = 'Mine', createdAt = Date.now()) => ({ name, members: [MALLORY], roles: { [MALLORY]: 'admin' }, createdAt });
+
+    it('lets the person create it once', async () => {
+      await assertSucceeds(setDoc(doc(as(MALLORY), FIRST), mine()));
+      await assertSucceeds(getDoc(doc(as(MALLORY), FIRST)));
+    });
+
+    it('refuses a second write with a new createdAt, so a double tap makes one household', async () => {
+      await assertSucceeds(setDoc(doc(as(MALLORY), FIRST), mine()));
+      await assertFails(setDoc(doc(as(MALLORY), FIRST), mine('Mine', Date.now() + 5)));
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        const all = await getDocs(query(collection(ctx.firestore(), 'households'), where('members', 'array-contains', MALLORY)));
+        if (all.size !== 1) throw new Error(`expected one household, found ${all.size}`);
+      });
+    });
+
+    it('refuses someone else creating a person\'s id (no squatting)', async () => {
+      await assertFails(setDoc(doc(as(BOB), FIRST), { name: 'Squat', members: [BOB], createdAt: Date.now() }));
+    });
+
+    it('refuses a first- id spelled with another case or address', async () => {
+      await assertFails(setDoc(doc(as(MALLORY), `households/${firstId(BOB)}`), mine()));
+      await assertFails(setDoc(doc(as(MALLORY), `households/first-${MALLORY}`), mine()));
+      await assertFails(setDoc(doc(as(MALLORY), 'households/first-'), mine()));
+    });
+
+    it('still lets a random id be created', async () => {
+      await assertSucceeds(setDoc(doc(as(MALLORY), 'households/random1'), mine()));
+    });
   });
 
   it('hides a household from non-members', async () => {
