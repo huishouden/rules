@@ -84,6 +84,10 @@ describe("a member's language", () => {
     const rest = { members: [ADMIN, MEMBER, KID], roles: { [ADMIN]: 'admin', [MEMBER]: 'member', [KID]: 'kid' } };
     await assertFails(updateDoc(doc(as(ADMIN), H), { ...rest, langs: { [ADMIN]: 'en', [MEMBER]: 'es' } }));
     await assertFails(updateDoc(doc(as(ADMIN), H), { ...rest, langs: { [ADMIN]: 'en', [MEMBER]: 'nl', [KID]: 'nl' } }));
+    // Dropping someone who stays: alone, with a rename, or alongside the removal.
+    await assertFails(updateDoc(doc(as(ADMIN), H), { langs: { [ADMIN]: 'en', [HELPER]: 'es' } }));
+    await assertFails(updateDoc(doc(as(ADMIN), H), { name: 'Renamed', langs: { [ADMIN]: 'en', [HELPER]: 'es' } }));
+    await assertFails(updateDoc(doc(as(ADMIN), H), { ...rest, langs: { [ADMIN]: 'en' } }));
     await assertSucceeds(updateDoc(doc(as(ADMIN), H), { ...rest, langs: { [ADMIN]: 'en', [MEMBER]: 'nl' } }));
   });
 

@@ -186,11 +186,13 @@ service cloud.firestore {
           && after.get(myEmail(), '') in ['en', 'es', 'nl'];
       }
 
-      // An admin removing someone may drop their entry too, and change no one's.
+      // An admin removing someone may drop their entry too, and no one else's: only entries of people
+      // no longer members go, none is added or changed.
       function langsOnlyDropped() {
         let langs = request.resource.data.get('langs', {}).diff(resource.data.get('langs', {}));
         return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['langs'])
-          || (request.resource.data.get('langs', null) is map && langs.addedKeys().size() == 0 && langs.changedKeys().size() == 0);
+          || (request.resource.data.get('langs', null) is map && langs.addedKeys().size() == 0 && langs.changedKeys().size() == 0
+            && !langs.removedKeys().hasAny(request.resource.data.members));
       }
 
       // Admins invite and remove people and set roles, but never their own: an admin can't remove

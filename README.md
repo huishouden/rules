@@ -133,6 +133,8 @@ it doesn't name is a member, except the household's creator (first in `members`)
 | Invite and remove people, set roles (never their own) | yes | | | |
 | Read the household's home address (`home`) | yes | yes | yes | yes |
 | Set or remove the household's home (`home`, in their own name) | yes | yes | | |
+| Set their own language (`langs[their email]`: `en`, `es` or `nl`), once joined; everyone's is read with the household | yes | yes | yes | yes |
+| Drop a removed member's `langs` entry, in the same write that removes them (never anyone else's) | yes | | | |
 | Rename the household; settings, food preferences, portal layout, lists, cars, meal plan, medicine courses | yes | yes | | |
 | Read lists, chores, pets, baby, home, car, contacts and appointments (not Health visits) | yes | yes | yes | yes |
 | Add items and log feeds, sleep, diapers, meals, readings and Home's service visits (not Health visits) | yes | yes | yes | yes |
