@@ -174,17 +174,36 @@ service cloud.firestore {
           && d.roles.values().hasOnly(['admin', 'member', 'helper', 'kid']));
       }
 
+      // Each member's language for the whole suite (@huishouden/pwa-kit/member-lang): a map from
+      // lowercase email to en, es or nl, which every member reads with the household (apps publish in
+      // their readers' languages, the sender notifies in it). A member writes only their own entry.
+      function myLangOnly() {
+        let after = request.resource.data.get('langs', null);
+        return after is map
+          && after.diff(resource.data.get('langs', {})).affectedKeys().hasOnly([myEmail()])
+          && after.get(myEmail(), '') in ['en', 'es', 'nl'];
+      }
+
+      // An admin removing someone may drop their entry too, and change no one's.
+      function langsOnlyDropped() {
+        let langs = request.resource.data.get('langs', {}).diff(resource.data.get('langs', {}));
+        return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['langs'])
+          || (request.resource.data.get('langs', null) is map && langs.addedKeys().size() == 0 && langs.changedKeys().size() == 0);
+      }
+
       // Admins invite and remove people and set roles, but never their own: an admin can't remove
       // or demote themselves, so a household always keeps one. The creator is the implicit admin
       // as members[0], so whoever else becomes first in the list must have their role written out.
       // Members may rename the household and set its currency and home; helpers and kids change nothing here. Separately, each
-      // member records their own first sign-in in `joined`, and only their own.
+      // member records their own first sign-in in `joined`, and only their own, and sets their own
+      // language in `langs`.
       allow update: if signedIn()
         && myEmail() in resource.data.members
         && (
           (roleOf(resource.data, myEmail()) == 'admin'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'members', 'roles', 'currency', 'home'])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'members', 'roles', 'currency', 'home', 'langs'])
             && homeOk()
+            && langsOnlyDropped()
             && memberEmails(request.resource.data.members)
             && householdName(request.resource.data)
             && householdCurrency(request.resource.data)
@@ -200,6 +219,8 @@ service cloud.firestore {
             && householdCurrency(request.resource.data))
           || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['joined'])
             && request.resource.data.joined == resource.data.get('joined', []).concat([myEmail()]))
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['langs'])
+            && myLangOnly())
         );
 
       allow delete: if false;
