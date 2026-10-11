@@ -47,6 +47,38 @@ describe('households', () => {
     await assertSucceeds(getDocs(query(collection(as(ALICE), 'households'), where('members', 'array-contains', ALICE))));
   });
 
+  describe('a first household has one id per person', () => {
+    const FIRST = `households/first-${MALLORY}`;
+    const mine = (name = 'Mine', createdAt = Date.now()) => ({ name, members: [MALLORY], roles: { [MALLORY]: 'admin' }, createdAt });
+
+    it('lets the person create it once', async () => {
+      await assertSucceeds(setDoc(doc(as(MALLORY), FIRST), mine()));
+      await assertSucceeds(getDoc(doc(as(MALLORY), FIRST)));
+    });
+
+    it('refuses a second write with a new createdAt, so a double tap makes one household', async () => {
+      await assertSucceeds(setDoc(doc(as(MALLORY), FIRST), mine()));
+      await assertFails(setDoc(doc(as(MALLORY), FIRST), mine('Mine', Date.now() + 5)));
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        const all = await getDocs(query(collection(ctx.firestore(), 'households'), where('members', 'array-contains', MALLORY)));
+        if (all.size !== 1) throw new Error(`expected one household, found ${all.size}`);
+      });
+    });
+
+    it('refuses someone else creating a person\'s id (no squatting)', async () => {
+      await assertFails(setDoc(doc(as(BOB), FIRST), { name: 'Squat', members: [BOB], createdAt: Date.now() }));
+    });
+
+    it('refuses a first- id spelled with another case or address', async () => {
+      await assertFails(setDoc(doc(as(MALLORY), 'households/first-someone@example.com'), mine()));
+      await assertFails(setDoc(doc(as(MALLORY), 'households/first-'), mine()));
+    });
+
+    it('still lets a random id be created', async () => {
+      await assertSucceeds(setDoc(doc(as(MALLORY), 'households/random1'), mine()));
+    });
+  });
+
   it('hides a household from non-members', async () => {
     await assertFails(getDoc(doc(as(MALLORY), 'households/h1')));
   });
