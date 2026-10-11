@@ -392,7 +392,7 @@ const SETUP: { path: string; doc: Record<string, unknown>; create?: boolean }[] 
   { path: 'stores/s1', doc: { name: 'Corner Grocer', categoryOrder: [] } },
   { path: 'carVehicles/v1', doc: { name: 'The car', createdAt: 1, by: ALICE } },
   { path: 'carSettings/main', doc: { distanceUnit: 'km', updatedAt: 1, updatedBy: ALICE } },
-  { path: 'babyProfile/main', doc: { name: 'Baby', updatedAt: 1 } },
+  { path: 'babyProfile/main', doc: { name: 'Baby', updatedAt: 1, updatedBy: ALICE } },
   {
     path: 'petMedCourses/k1',
     doc: { petId: 'p1', name: 'Antibiotic', dose: '1 tablet', timesPerDay: 1, times: ['09:00'], startDate: '2031-05-12', days: 7, withFood: true, createdAt: 1, by: ALICE },
@@ -403,6 +403,15 @@ const SETUP: { path: string; doc: Record<string, unknown>; create?: boolean }[] 
   { path: 'menus/m1', doc: { meals: [], createdAt: 1 }, create: true },
   { path: 'mealPlan/2031-01-06_dinner', doc: { day: '2031-01-06', type: 'dinner', name: 'Soup', meal: {}, by: '', updatedAt: 1 } },
 ];
+
+describe('settings signed by the member who saves them', () => {
+  it("an admin can't save the car's unit or the baby's profile as someone else", async () => {
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/carSettings/main'), { distanceUnit: 'km', updatedAt: 1, updatedBy: BOB }));
+    await assertFails(setDoc(doc(as(ALICE), 'households/h1/babyProfile/main'), { name: 'Baby', updatedAt: 1, updatedBy: BOB }));
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/carSettings/main'), { distanceUnit: 'km', updatedAt: 1, updatedBy: ALICE }));
+    await assertSucceeds(setDoc(doc(as(ALICE), 'households/h1/babyProfile/main'), { name: 'Baby', updatedAt: 1, updatedBy: ALICE }));
+  });
+});
 
 describe('household setup, by role', () => {
   for (const s of SETUP) {
@@ -415,7 +424,11 @@ describe('household setup, by role', () => {
         const staff = STAFF.includes(who);
         const inside = IN_HOUSEHOLD.includes(who);
         // Food preferences and the meal plan record who wrote them.
-        const signed = { ...s.doc, ...('by' in s.doc && typeof s.doc.by === 'string' && s.path.match(/^(settings\/food|mealPlan)/) ? { by: me } : {}) };
+        const signed = {
+          ...s.doc,
+          ...('by' in s.doc && typeof s.doc.by === 'string' && s.path.match(/^(settings\/food|mealPlan)/) ? { by: me } : {}),
+          ...('updatedBy' in s.doc ? { updatedBy: me } : {}),
+        };
 
         it(`${who}: ${inside ? 'reads' : 'can’t read'}, ${staff ? 'writes' : 'can’t write'}`, async () => {
           await expect(inside, getDoc(doc(as(me), path)));
@@ -983,7 +996,7 @@ describe('babyContractionSettings: the provider’s instructions for the timer',
     it(`${who}: ${reads ? 'reads' : 'can’t read'} it and ${staff ? 'writes' : 'can’t write'} it`, async () => {
       await seed(path, note);
       await expect(reads, getDoc(doc(as(me), path)));
-      await expect(staff, setDoc(doc(as(me), path), { ...note, note: 'Call if 4 in an hour' }));
+      await expect(staff, setDoc(doc(as(me), path), { ...note, note: 'Call if 4 in an hour', updatedBy: me }));
     });
   }
   it('keeps to its fields, a string of at most 300 characters, and the id main', async () => {
@@ -992,6 +1005,10 @@ describe('babyContractionSettings: the provider’s instructions for the timer',
     await assertFails(setDoc(doc(as(ALICE), path), { ...note, note: 5 }));
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/babyContractionSettings/other'), note));
     await assertSucceeds(setDoc(doc(as(ALICE), path), { ...note, note: 'x'.repeat(300) }));
+  });
+  it('is signed by the member who saves it', async () => {
+    await assertFails(setDoc(doc(as(ALICE), path), { ...note, updatedBy: BOB }));
+    await assertFails(setDoc(doc(as(ALICE), path), { note: 'x', updatedAt: 1 }));
   });
 });
 
@@ -1137,7 +1154,7 @@ describe('babyKickSettings: the target and the daily reminder time', () => {
     it(`${who}: ${reads ? 'reads' : 'can’t read'} it and ${staff ? 'writes' : 'can’t write'} it`, async () => {
       await seed(path, settings);
       await expect(reads, getDoc(doc(as(me), path)));
-      await expect(staff, setDoc(doc(as(me), path), { ...settings, target: 8 }));
+      await expect(staff, setDoc(doc(as(me), path), { ...settings, target: 8, updatedBy: me }));
     });
   }
   it('keeps to its fields, a target of 1 to 50, an HH:MM time, and the id main', async () => {
@@ -1147,5 +1164,9 @@ describe('babyKickSettings: the target and the daily reminder time', () => {
     await assertFails(setDoc(doc(as(ALICE), path), { ...settings, remindAt: 5 }));
     await assertFails(setDoc(doc(as(ALICE), 'households/h1/babyKickSettings/other'), settings));
     await assertSucceeds(setDoc(doc(as(ALICE), path), { target: 12, updatedAt: 1, updatedBy: ALICE }));
+  });
+  it('is signed by the member who saves it', async () => {
+    await assertFails(setDoc(doc(as(ALICE), path), { ...settings, updatedBy: BOB }));
+    await assertFails(setDoc(doc(as(ALICE), path), { target: 12, updatedAt: 1 }));
   });
 });
