@@ -71,7 +71,7 @@ describe('agenda items for calendars', () => {
   });
 });
 
-const settings = (by: string, extra: Record<string, unknown> = {}) => ({ hiddenApps: ['pet'], todos: true, bills: false, healthDetail: false, done: true, updatedAt: 5, by, ...extra });
+const settings = (by: string, extra: Record<string, unknown> = {}) => ({ hiddenApps: ['pet'], todos: true, healthDetail: false, done: true, updatedAt: 5, by, ...extra });
 
 describe('calendarSettings', () => {
   it('each member reads and writes only their own', async () => {
@@ -90,6 +90,11 @@ describe('calendarSettings', () => {
     await assertFails(setDoc(doc(as(BOB), `${H}/calendarSettings/${BOB}`), settings(BOB, { healthDetail: 'yes' })));
     await assertFails(setDoc(doc(as(BOB), `${H}/calendarSettings/${BOB}`), settings(BOB, { hiddenApps: 'pet' })));
     await assertFails(setDoc(doc(as(BOB), `${H}/calendarSettings/${BOB}`), settings(ALICE)));
+  });
+
+  it('no longer takes the old separate bills switch; Bills is one of hiddenApps', async () => {
+    await assertFails(setDoc(doc(as(BOB), `${H}/calendarSettings/${BOB}`), settings(BOB, { bills: false })));
+    await assertSucceeds(setDoc(doc(as(BOB), `${H}/calendarSettings/${BOB}`), settings(BOB, { hiddenApps: ['bills'] })));
   });
 });
 
