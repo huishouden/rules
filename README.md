@@ -113,6 +113,11 @@ these rules, like the connector.
   Health dose's medicine names). The kit (`@huishouden/pwa-kit/agenda-core`)
   checks the contents and which collections an app's edits may touch; each write is made as the
   member and meets its own collection's rules.
+- `agenda`, `personalAgenda`, `reminders` and `personalReminders` may carry `merge` (`key`, `part`,
+  `title` with `{parts}`; `MERGE_FIELDS` in `@huishouden/pwa-kit/merge`), and their `texts` the
+  merge's `mergePart` and `mergeTitle` per language: things of one app at the same time for the same
+  readers show as one (garbage and recycling, two pets' meals) in the portal, calendars and
+  notifications.
 - `calendarSettings/{email}`: what that member's calendar shows (`hiddenApps`, Bills among
   them, `todos`, `healthDetail`, `done`, `updatedAt`, `by`). Only that member reads and writes it.
   Documents written before pwa-kit v0.115.2 may still carry a separate `bills` field; the kit reads

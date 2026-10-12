@@ -11,6 +11,7 @@ import * as spending from '@huishouden/pwa-kit/spending-core';
 import * as todo from '@huishouden/pwa-kit/todo-core';
 import * as visit from '@huishouden/pwa-kit/visit';
 import * as condition from '@huishouden/pwa-kit/condition';
+import * as merge from '@huishouden/pwa-kit/merge';
 
 // The kit's `*_FIELDS` lists against the rules' `hasOnly` lists, field for field. The kit writes a
 // document with exactly its list; the rules accept exactly theirs. When the two differ, a field the
@@ -26,7 +27,7 @@ const CHANGED = 'request.resource.data.diff(resource.data).affectedKeys()';
 // Each list once, by module and name: the value compared is the one the name says.
 const KIT = {
   'agenda-core': agenda, 'calendar-export': calendarExport, 'contact-core': contact, food, push,
-  'reminder-core': reminder, 'spending-core': spending, 'todo-core': todo, visit, condition,
+  'reminder-core': reminder, 'spending-core': spending, 'todo-core': todo, visit, condition, merge,
 } as const;
 type Module = keyof typeof KIT;
 
@@ -37,6 +38,7 @@ const CONTRACT: { module: Module; name: string; after: string; on: string }[] = 
   { module: 'reminder-core', name: 'REMINDER_FIELDS', after: 'match /reminders/{reminderId} {', on: DATA },
   { module: 'agenda-core', name: 'SERIES_FIELDS', after: 'function agendaExport(d) {', on: 'd.series.keys()' },
   { module: 'agenda-core', name: 'AGENDA_FIELDS', after: 'match /agenda/{itemId} {', on: DATA },
+  { module: 'merge', name: 'MERGE_FIELDS', after: 'function hhMerge(d) {', on: 'd.merge.keys()' },
   { module: 'todo-core', name: 'TODO_ACTION_FIELDS', after: 'function todoActionShape(a) {', on: 'a.keys()' },
   { module: 'todo-core', name: 'TODO_FIELDS', after: 'match /todos/{todoId} {', on: DATA },
   { module: 'visit', name: 'VISIT_FIELDS', after: 'function visitShape(d) {', on: 'd.keys()' },
