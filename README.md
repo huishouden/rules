@@ -113,8 +113,10 @@ these rules, like the connector.
   Health dose's medicine names). The kit (`@huishouden/pwa-kit/agenda-core`)
   checks the contents and which collections an app's edits may touch; each write is made as the
   member and meets its own collection's rules.
-- `calendarSettings/{email}`: what that member's calendar shows (`hiddenApps`, `todos`, `bills`,
-  `healthDetail`, `done`, `updatedAt`, `by`). Only that member reads and writes it. Feed secrets and
+- `calendarSettings/{email}`: what that member's calendar shows (`hiddenApps`, Bills among
+  them, `todos`, `healthDetail`, `done`, `updatedAt`, `by`). Only that member reads and writes it.
+  Documents written before pwa-kit v0.115.2 may still carry a separate `bills` field; the kit reads
+  it as Bills hidden and the next full save drops it. Feed secrets and
   Google tokens are never in Firestore; the Worker keeps them encrypted in its own storage.
 - `calendarChanges/{id}`: one change carried back from Google Calendar (`email`, `source: 'google'`,
   `app`, `ref`, `title`, `change`, `from`, `to`, `undo`, `at`, `by`). Only its member reads and
