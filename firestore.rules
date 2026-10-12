@@ -2030,17 +2030,16 @@ service cloud.firestore {
       }
 
       // Each member's calendar settings (@huishouden/pwa-kit/calendar-export, CALENDAR_SETTINGS_FIELDS):
-      // which apps their calendar feed and Google Calendar show, and whether to-dos, bills, finished
+      // which apps (Bills among them) their calendar feed and Google Calendar show, and whether to-dos, finished
       // things and Health's detail go in. Only that member reads and writes them; huishouden/calendar
       // reads them as the member. The feed's secret and Google's tokens are never here: the Worker
       // keeps them encrypted in its own storage.
       match /calendarSettings/{email} {
         allow read, delete: if isMember() && email == myEmail();
         allow create, update: if isMember() && email == myEmail()
-          && request.resource.data.keys().hasOnly(['hiddenApps', 'todos', 'bills', 'healthDetail', 'done', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['hiddenApps', 'todos', 'healthDetail', 'done', 'updatedAt', 'by'])
           && request.resource.data.hiddenApps is list && request.resource.data.hiddenApps.size() <= 30
           && request.resource.data.todos is bool
-          && request.resource.data.bills is bool
           && request.resource.data.healthDetail is bool
           && request.resource.data.done is bool
           && request.resource.data.updatedAt is int
