@@ -1407,9 +1407,23 @@ service cloud.firestore {
       // Each language's words: only the record's own text fields, all strings, together no longer than those fields' limits added up. Kept to a few
       // expressions: a request may evaluate at most 1000, and a to-do's checks are already many.
       // (keys() refuses anything but a map.)
+      // A reminder's words in one language, and its merge's part and title (@huishouden/pwa-kit/merge).
+      // The merge words are bounded only by the total: a reminder's rule has no expressions to spare,
+      // and the kit clips them (60, 120) before writing and again when it merges.
       function hhReminderText(m) {
-        return m.keys().hasOnly(['title', 'body']) && m.title.matches('(?s).{1,120}')
-          && m.get('body', '') is string && m.values().join('').size() <= 620;
+        return m.keys().hasOnly(['title', 'body', 'mergePart', 'mergeTitle']) && m.title.matches('(?s).{1,120}')
+          && m.get('body', '').matches('(?s).{0,500}') && m.values().join('').size() <= 800;
+      }
+
+      // Things that may show as one (@huishouden/pwa-kit/merge, MERGE_FIELDS): an agenda item's or a
+      // reminder's merge key, its part of the combined title, and that title with `{parts}`. The
+      // apps, the calendar Worker and the sender merge only items of the same app with the same
+      // readers, so a merge never shows anyone what they couldn't read. (A non-string part or title
+      // fails `matches`: refused.)
+      function hhMerge(d) {
+        return !('merge' in d) || (d.merge is map && d.merge.keys().hasOnly(['key', 'part', 'title'])
+          && d.merge.key.matches('(?s).{1,80}') && d.merge.part.matches('(?s).{1,60}')
+          && d.merge.title.matches('(?s).{0,120}') && d.merge.title.matches('(?s).*[{]parts[}].*'));
       }
 
       // A reminder's, apart from the others': a reminder's rule also checks its source, so it has the fewest expressions to spare.
@@ -1425,8 +1439,9 @@ service cloud.firestore {
       }
 
       function hhAgendaText(m) {
-        return m is map && m.keys().hasOnly(['title', 'detail']) && m.get('title', '') is string && m.get('detail', '') is string
-          && m.values().join('').size() <= 320;
+        return m is map && m.keys().hasOnly(['title', 'detail', 'mergePart', 'mergeTitle']) && m.get('title', '') is string && m.get('detail', '') is string
+          && (m.get('title', '') + m.get('detail', '')).size() <= 320
+          && m.get('mergePart', '').matches('(?s).{0,60}') && m.get('mergeTitle', '').matches('(?s).{0,120}');
       }
 
       function hhTexts(d, kind) {
@@ -1531,8 +1546,9 @@ service cloud.firestore {
         allow read: if readable();
         allow delete: if openDerivedRemoval();
         allow create, update: if openDerived()
-          && request.resource.data.keys().hasOnly(['app', 'title', 'body', 'texts', 'at', 'url', 'recipients', 'ref', 'private', 'source', 'sent', 'sentAt', 'createdAt', 'by'])
+          && request.resource.data.keys().hasOnly(['app', 'title', 'body', 'texts', 'at', 'url', 'recipients', 'ref', 'private', 'source', 'merge', 'sent', 'sentAt', 'createdAt', 'by'])
           && hhStr(request.resource.data, 'app', 1, 40)
+          && hhMerge(request.resource.data)
           && hhStr(request.resource.data, 'title', 1, 120)
           && hhStr(request.resource.data, 'body', 0, 500)
           && hhReminderTexts(request.resource.data)
@@ -1558,13 +1574,15 @@ service cloud.firestore {
       // collection's rules. `calendarDetail`: more than the portal shows (a Health dose's medicine
       // names), only for the reader's own calendar when they ask for detail; it never leaves the
       // item's readers.
+      // `merge` (hhMerge): the item may show as one with the app's others at the same time.
       function agendaExport(d) {
         return (!('series' in d) || (d.series is map
             && d.series.keys().hasOnly(['rule', 'time', 'minutes', 'original', 'through'])
             && d.series.rule is map && isYmd(d.series.original) && isYmd(d.series.through)))
           && (!('edit' in d) || (d.edit is map && d.edit.size() <= 6
             && d.edit.keys().hasOnly(['reschedule', 'retime', 'rename', 'notes', 'skip', 'cancel'])))
-          && (!('calendarDetail' in d) || hhStr(d, 'calendarDetail', 0, 200));
+          && (!('calendarDetail' in d) || hhStr(d, 'calendarDetail', 0, 200))
+          && hhMerge(d);
       }
 
       // The household agenda (@huishouden/pwa-kit/agenda; fields match AGENDA_FIELDS there): every
@@ -1575,7 +1593,7 @@ service cloud.firestore {
         allow read: if readable();
         allow delete: if openDerivedRemoval();
         allow create, update: if openDerived()
-          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'texts', 'series', 'edit', 'calendarDetail', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'texts', 'series', 'edit', 'calendarDetail', 'merge', 'updatedAt', 'by'])
           && hhTexts(request.resource.data, 'agenda')
           && agendaExport(request.resource.data)
           && hhStr(request.resource.data, 'app', 1, 40)
@@ -1964,7 +1982,7 @@ service cloud.firestore {
       match /personalAgenda/{itemId} {
         allow read, delete: if audienceRead();
         allow create, update: if audienceWrite()
-          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'texts', 'series', 'edit', 'calendarDetail', 'audience', 'updatedAt', 'by'])
+          && request.resource.data.keys().hasOnly(['app', 'ref', 'kind', 'title', 'start', 'end', 'allDay', 'detail', 'url', 'who', 'status', 'private', 'texts', 'series', 'edit', 'calendarDetail', 'merge', 'audience', 'updatedAt', 'by'])
           && hhTexts(request.resource.data, 'agenda')
           && agendaExport(request.resource.data)
           && hhStr(request.resource.data, 'app', 1, 40)
@@ -2012,7 +2030,8 @@ service cloud.firestore {
         allow read, delete: if audienceRead();
         allow create, update: if audienceWrite()
           && (request.method == 'create' || resource.data.get('sent', false) == false || request.resource.data.get('sent', false) == true)
-          && request.resource.data.keys().hasOnly(['app', 'title', 'body', 'texts', 'at', 'url', 'recipients', 'ref', 'private', 'source', 'audience', 'sent', 'sentAt', 'createdAt', 'by'])
+          && request.resource.data.keys().hasOnly(['app', 'title', 'body', 'texts', 'at', 'url', 'recipients', 'ref', 'private', 'source', 'merge', 'audience', 'sent', 'sentAt', 'createdAt', 'by'])
+          && hhMerge(request.resource.data)
           && request.resource.data.app.matches('(?s).{1,40}')
           && request.resource.data.title.matches('(?s).{1,120}')
           && request.resource.data.body.matches('(?s).{0,500}')
