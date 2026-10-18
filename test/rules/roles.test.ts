@@ -687,6 +687,17 @@ describe('ticking off', () => {
     await assertSucceeds(updateDoc(doc(as(HELEN), 'households/h1/petReminders/r2'), { lastDoneAt: 5 }));
   });
 
+  it("lets a helper tick someone else's dated item but not change its day; their own, yes", async () => {
+    await seed('households/h1/items/d1', { name: 'Deodorant', listId: 'groceries', completed: false, urgency: 'Standard', needBy: '2031-01-07', by: ALICE });
+    const db = as(HELEN);
+    await assertFails(updateDoc(doc(db, 'households/h1/items/d1'), { needBy: '2031-01-05', urgency: 'Need Today', updatedAt: 5 }));
+    await assertFails(updateDoc(doc(db, 'households/h1/items/d1'), { needBy: null, updatedAt: 5 }));
+    await assertSucceeds(updateDoc(doc(db, 'households/h1/items/d1'), { completed: true, completedAt: 5, updatedAt: 5 }));
+    await assertSucceeds(updateDoc(doc(as(BOB), 'households/h1/items/d1'), { needBy: '2031-01-09', updatedAt: 6 }));
+    await seed('households/h1/items/d2', { name: 'Batteries', listId: 'groceries', completed: false, urgency: 'Standard', by: HELEN });
+    await assertSucceeds(updateDoc(doc(db, 'households/h1/items/d2'), { needBy: '2031-01-07', urgency: 'Standard', updatedAt: 5 }));
+  });
+
   it('lets a helper tick a step on someone else’s item but not add, drop or empty steps', async () => {
     const steps = [{ id: 's1', text: 'Pack', done: false }, { id: 's2', text: 'Go', done: false }];
     await seed('households/h1/items/c1', { name: 'Trip', listId: 'todo', completed: false, subtasks: steps, by: ALICE });
