@@ -258,6 +258,10 @@ service cloud.firestore {
           // Ticking a step off someone else's item keeps its steps (Tasks rewrites the whole list).
           && (staff() || request.method == 'create' || addedByMe()
             || request.resource.data.get('subtasks', []).size() == resource.data.get('subtasks', []).size())
+          // The day it is needed by (@huishouden/pwa-kit/need-by): a calendar day or none.
+          && (request.resource.data.get('needBy', null) == null
+            || (request.resource.data.needBy is string
+              && request.resource.data.needBy.matches('[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])')))
           // Shown as a link on every member's list: a web address or nothing.
           && (!('link' in request.resource.data) || request.resource.data.link == ''
             || (request.resource.data.link is string && request.resource.data.link.size() <= 2000

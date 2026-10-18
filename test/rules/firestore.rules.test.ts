@@ -7,7 +7,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { arrayUnion, collection, collectionGroup, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { arrayUnion, collection, collectionGroup, deleteDoc, deleteField, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 
 const ALICE = 'alice@example.com';
 const BOB = 'bob@example.com';
@@ -1349,6 +1349,21 @@ describe('attacks', () => {
     batch.set(doc(db, 'households/h1/contacts/new'), { name: 'Example Rentals', apps: ['bills'], createdAt: 1, by: ALICE });
     batch.set(doc(db, 'households/h1/contactPay/new'), pay);
     await assertSucceeds(batch.commit());
+  });
+
+  it("keeps an item's need-by day a calendar day or none (@huishouden/pwa-kit/need-by)", async () => {
+    const item = { name: 'Deodorant', listId: 'groceries', completed: false, urgency: 'Standard' };
+    const put = (data: Record<string, unknown>) => setDoc(doc(as(ALICE), 'households/h1/items/n1'), { ...item, ...data });
+    await assertSucceeds(put({}));
+    await assertSucceeds(put({ needBy: '2031-01-07' }));
+    await assertSucceeds(put({ needBy: '2031-12-31', urgency: 'Need Today' }));
+    await assertSucceeds(put({ needBy: null }));
+    for (const needBy of ['tuesday', '2031-1-7', '2031-13-01', '2031-01-32', '2031-01-00', '20310107', '2031-01-07T10:00', ' 2031-01-07', 20310107, true, { day: '2031-01-07' }]) {
+      await assertFails(put({ needBy }));
+    }
+    await assertSucceeds(put({ needBy: '2031-01-07' }));
+    await assertSucceeds(updateDoc(doc(as(ALICE), 'households/h1/items/n1'), { needBy: deleteField() }));
+    await assertFails(updateDoc(doc(as(ALICE), 'households/h1/items/n1'), { needBy: 'soon' }));
   });
 
   it('keeps list item and baby appointment links to web addresses', async () => {
